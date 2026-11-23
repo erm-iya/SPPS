@@ -240,16 +240,65 @@ spec:
             self.assertEqual(dict(py_pkgs)["jinja2"], "3.1.2")
 
     def test_scan_result_scoring(self):
-        res = ScanResult()
+        res = ScanResult(target_dir="/mock/project")
+        res.volume_metrics.total_loc = 10000
+        res.volume_metrics.total_files = 25
         res.findings = [
-            Finding("F1", "Cat", Severity.CRITICAL, "d", "r"),
-            Finding("F2", "Cat", Severity.HIGH, "d", "r"),
-            Finding("F3", "Cat", Severity.MEDIUM, "d", "r"),
+            Finding("F1", Category.SAST.value, Severity.CRITICAL, "d", "r"),
+            Finding("F2", Category.SAST.value, Severity.HIGH, "d", "r"),
+            Finding("F3", Category.SAST.value, Severity.MEDIUM, "d", "r"),
         ]
         res.calculate_score()
-        # 100 - (1*25 + 1*12 + 1*6) = 100 - 43 = 57 -> Grade C
-        self.assertEqual(res.security_score, 57)
+        # 1 Critical strictly caps the score at 69 -> Grade C
+        self.assertEqual(res.security_score, 69)
         self.assertEqual(res.grade, "C")
+        self.assertIsNotNone(res.pillar_scores)
+        self.assertTrue(0 <= res.pillar_scores.sast_score <= 100)
+
+    def test_volume_normalization_and_guardrails(self):
+        # 1. Micro-project vs Enterprise scale with same defect count
+        f1 = Finding("SQL Injection", Category.SAST.value, Severity.HIGH, "desc", "remed", cvss_score=8.5)
+        f2 = Finding("DOM XSS", Category.SAST.value, Severity.MEDIUM, "desc", "remed", cvss_score=5.5)
+
+        r_micro = ScanResult(target_dir="/mock/micro")
+        r_micro.volume_metrics.total_loc = 250
+        r_micro.volume_metrics.total_files = 2
+        r_micro.findings = [f1, f2]
+        r_micro.calculate_score()
+
+        r_large = ScanResult(target_dir="/mock/large")
+        r_large.volume_metrics.total_loc = 120000
+        r_large.volume_metrics.total_files = 350
+        r_large.findings = [f1, f2]
+        r_large.calculate_score()
+
+        # Defect density on large project is tiny -> score must be significantly higher
+        self.assertTrue(r_large.security_score > r_micro.security_score)
+        self.assertTrue(r_large.security_score >= 90)
+
+        # 2. Critical guardrail ceiling on huge codebase
+        r_huge_crit = ScanResult(target_dir="/mock/huge")
+        r_huge_crit.volume_metrics.total_loc = 1000000
+        r_huge_crit.volume_metrics.total_files = 2000
+        r_huge_crit.findings = [
+            Finding("Root Key Leak", Category.SAST.value, Severity.CRITICAL, "AWS Key", "Revoke", cvss_score=9.8)
+        ]
+        r_huge_crit.calculate_score()
+        # Even with 1M LoC, 1 Critical exploit caps score at Grade C (<= 69)
+        self.assertLessEqual(r_huge_crit.security_score, 69)
+        self.assertEqual(r_huge_crit.grade, "C")
+
+    def test_scanner_volume_metrics_tracking(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "service.py")
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write("""# Service file\n\nimport os\n\ndef run():\n    print('Hello World')\n    return True\n""")
+
+            sast = SASTScanner(tmpdir)
+            sast.scan()
+
+            self.assertEqual(sast.scanned_files_count, 1)
+            self.assertTrue(sast.scanned_loc >= 4)
 
     def test_api_spec_scanner(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -413,6 +462,100 @@ def read_custom_log(user_input):
             self.assertIn("JSON.parse", content)
             self.assertIn("display: block;", content)
             self.assertIn("display: none;", content)
+
+    def test_sast_vendor_exclusion_and_clustering(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # 1. Vendor directory (should be skipped)
+            vendor_dir = os.path.join(tmpdir, "public", "libs")
+            os.makedirs(vendor_dir, exist_ok=True)
+            with open(os.path.join(vendor_dir, "tailwindcss.js"), "w", encoding="utf-8") as f:
+                f.write("eval('select * from users where id=' + id);\n")
+
+            # 2. Minified file in root (should be skipped)
+            with open(os.path.join(tmpdir, "bundle.min.js"), "w", encoding="utf-8") as f:
+                f.write("eval('danger');\n")
+
+            # 3. Client-side file with repetitive DOM XSS and fetch (SSRF should be skipped)
+            public_js = os.path.join(tmpdir, "public", "js")
+            os.makedirs(public_js, exist_ok=True)
+            client_file = os.path.join(public_js, "app.js")
+            with open(client_file, "w", encoding="utf-8") as f:
+                # SSRF candidate in frontend (should be filtered out)
+                f.write("fetch(url + '?id=' + id);\n")
+                # 10 innerHTML assignments (should be clustered to 5)
+                for i in range(10):
+                    f.write(f"container.innerHTML = generateCard({i}) + '<br>';\n")
+
+            scanner = SASTScanner(tmpdir)
+            findings = scanner.scan()
+
+            # Verify vendor files were excluded
+            self.assertFalse(any("tailwindcss" in (f.location or "") for f in findings))
+            self.assertFalse(any("bundle.min.js" in (f.location or "") for f in findings))
+
+            # Verify SSRF was not flagged on frontend JS
+            self.assertFalse(any("SSRF" in f.title for f in findings))
+
+            # Verify DOM XSS was clustered
+            xss_findings = [f for f in findings if "innerHTML" in f.title]
+            self.assertEqual(len(xss_findings), 5)  # Capped at MAX_FINDINGS_PER_RULE_PER_FILE = 5
+            self.assertTrue(xss_findings[-1].cluster_count > 1)
+            self.assertIn("Clustered", xss_findings[-1].description)
+
+    def test_clustered_scoring_fairness_and_guardrails(self):
+        from sec_audit.models import VolumeMetrics
+
+        # Scenario 1: Large repository (80 KLoC) with 20 clustered medium DOM findings
+        res = ScanResult(
+            target_dir="/mock/project",
+            volume_metrics=VolumeMetrics(
+                total_loc=80000,
+                total_files=150,
+                total_dependencies=200,
+            ),
+        )
+        for i in range(20):
+            res.findings.append(
+                Finding(
+                    title="Insecure document.write / innerHTML Assignment",
+                    category=Category.SAST.value,
+                    severity=Severity.MEDIUM,
+                    description="DOM XSS",
+                    remediation="Sanitize",
+                    location=f"public/app_{i % 3}.js:{10 + i}",
+                    cvss_score=5.5,
+                )
+            )
+        res.calculate_score()
+        # Should be a fair score (Grade B / >= 80%), not collapsing to 15%
+        self.assertGreaterEqual(res.pillar_scores.sast_score, 80)
+        self.assertGreaterEqual(res.security_score, 80)
+
+        # Scenario 2: Project with 2 verified Critical exploits triggers guardrail
+        res.findings.append(
+            Finding(
+                title="Hardcoded Production Private Key",
+                category=Category.SAST.value,
+                severity=Severity.CRITICAL,
+                description="Leaked key",
+                remediation="Rotate",
+                cvss_score=9.8,
+            )
+        )
+        res.findings.append(
+            Finding(
+                title="Remote Code Execution via Insecure Deserialization",
+                category=Category.SAST.value,
+                severity=Severity.CRITICAL,
+                description="RCE",
+                remediation="Use JSON",
+                cvss_score=9.8,
+            )
+        )
+        res.calculate_score()
+        # Guardrail for 2 Criticals: composite ceiling <= 49 (Grade D)
+        self.assertLessEqual(res.security_score, 49)
+        self.assertIn(res.grade, ["D", "F"])
 
 
 if __name__ == "__main__":

@@ -29,6 +29,8 @@ class HTMLReporter:
             stats=self.result.stats,
             detected_tech=self.result.detected_tech,
             license_summary=self.result.license_summary,
+            volume_metrics=self.result.volume_metrics.to_dict(),
+            pillar_scores=self.result.pillar_scores.to_dict(),
             findings=[f.to_dict() for f in self.result.findings],
         )
 

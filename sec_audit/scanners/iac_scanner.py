@@ -32,6 +32,7 @@ class IaCScanner:
     def __init__(self, target_dir: str):
         self.target_dir = os.path.abspath(target_dir)
         self.matcher = IgnoreMatcher(self.target_dir)
+        self.manifests_count: int = 0
 
     def scan(self) -> List[Finding]:
         findings: List[Finding] = []
@@ -53,22 +54,25 @@ class IaCScanner:
 
                 # 1. Audit Dockerfile
                 if filename_lower == "dockerfile" or filename_lower.endswith(".dockerfile"):
+                    self.manifests_count += 1
                     findings.extend(self._audit_dockerfile(filepath, relpath))
 
                 # 2. Audit Docker Compose
                 elif filename_lower in ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"]:
+                    self.manifests_count += 1
                     findings.extend(self._audit_docker_compose(filepath, relpath))
 
                 # 3. Audit Kubernetes Manifests
                 elif filename_lower.endswith((".yaml", ".yml")):
+                    self.manifests_count += 1
                     findings.extend(self._audit_k8s_manifest(filepath, relpath))
 
         return findings
 
-    def _audit_dockerfile(self, filepath: str, relpath: str) -> List[Finding]:
+    def _audit_dockerfile(self, manifest_file: str, relpath: str) -> List[Finding]:
         findings = []
         try:
-            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            with open(manifest_file, "r", encoding="utf-8", errors="ignore") as f:
                 lines = f.readlines()
         except Exception:
             return findings
@@ -138,10 +142,10 @@ class IaCScanner:
 
         return findings
 
-    def _audit_docker_compose(self, filepath: str, relpath: str) -> List[Finding]:
+    def _audit_docker_compose(self, manifest_file: str, relpath: str) -> List[Finding]:
         findings = []
         try:
-            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            with open(manifest_file, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
                 lines = content.splitlines()
         except Exception:
@@ -187,10 +191,10 @@ class IaCScanner:
 
         return findings
 
-    def _audit_k8s_manifest(self, filepath: str, relpath: str) -> List[Finding]:
+    def _audit_k8s_manifest(self, manifest_file: str, relpath: str) -> List[Finding]:
         findings = []
         try:
-            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            with open(manifest_file, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
         except Exception:
             return findings

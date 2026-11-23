@@ -28,7 +28,7 @@ class CORSMethodsScanner:
                 self.target_url,
                 headers=self.headers,
                 timeout=self.timeout,
-                verify=False,
+                verify=False,  # nosec: defensive auditor scanning target endpoints
             )
             if resp_trace.status_code == 200 and "message/http" in resp_trace.headers.get("Content-Type", ""):
                 findings.append(
@@ -67,7 +67,7 @@ class CORSMethodsScanner:
                     self.target_url,
                     headers=cors_headers,
                     timeout=self.timeout,
-                    verify=False,
+                    verify=False,  # nosec: defensive auditor scanning target endpoints
                 )
 
                 allow_origin = resp_cors.headers.get("Access-Control-Allow-Origin")

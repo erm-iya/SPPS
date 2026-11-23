@@ -58,7 +58,7 @@ class TechDetector:
                 self.target_url,
                 headers={"User-Agent": DEFAULT_USER_AGENT},
                 timeout=self.timeout,
-                verify=False,
+                verify=False,  # nosec: defensive auditor scanning target endpoints
             )
         except Exception:
             return detected

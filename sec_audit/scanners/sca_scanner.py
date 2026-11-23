@@ -27,6 +27,7 @@ class SCAScanner:
         self.timeout = timeout
         self.headers = {"User-Agent": DEFAULT_USER_AGENT, "Content-Type": "application/json"}
         self.matcher = IgnoreMatcher(self.target_dir)
+        self.total_packages_count: int = 0
 
     def scan(self) -> List[Finding]:
         findings: List[Finding] = []
@@ -98,6 +99,8 @@ class SCAScanner:
                         if (pkg, ver, "Go") not in seen_keys:
                             seen_keys.add((pkg, ver, "Go"))
                             packages.append((pkg, ver, "Go", relpath))
+
+        self.total_packages_count = len(packages)
 
         # Query OSV database using high-speed batch querying
         findings.extend(self._check_packages_osv_batch(packages))

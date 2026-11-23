@@ -3,6 +3,7 @@ OASIS SARIF (Static Analysis Results Interchange Format) v2.1.0 Reporter
 Enables native integration with GitHub Code Scanning, GitLab Security Dashboards, and CI/CD pipelines.
 """
 
+import os
 import json
 from typing import Dict, Any
 from ..models import ScanResult, Severity
@@ -107,5 +108,7 @@ class SARIFReporter:
             ],
         }
 
-        with open(filepath, "w", encoding="utf-8") as out:
+        target_path = os.path.abspath(filepath)
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(target_path, "w", encoding="utf-8") as out:
             json.dump(sarif_data, out, indent=2, ensure_ascii=False)

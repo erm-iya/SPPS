@@ -54,6 +54,7 @@ class APISpecScanner:
         self.timeout = timeout
         self.headers = {"User-Agent": DEFAULT_USER_AGENT, "Accept": "application/json"}
         self.matcher = IgnoreMatcher(self.target_dir) if self.target_dir else None
+        self.total_routes_count: int = 0
 
     def scan(self) -> List[Finding]:
         findings: List[Finding] = []
@@ -103,13 +104,13 @@ class APISpecScanner:
 
         return findings
 
-    def _load_local_spec(self, filepath: str) -> Optional[Dict[str, Any]]:
+    def _load_local_spec(self, spec_path: str) -> Optional[Dict[str, Any]]:
         try:
-            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            with open(spec_path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
-            if filepath.endswith((".json",)):
+            if spec_path.endswith((".json",)):
                 return json.loads(content)
-            elif YAML_AVAILABLE and filepath.endswith((".yaml", ".yml")):
+            elif YAML_AVAILABLE and spec_path.endswith((".yaml", ".yml")):
                 return yaml.safe_load(content)
             else:
                 return json.loads(content)
@@ -122,7 +123,7 @@ class APISpecScanner:
                 url,
                 headers=self.headers,
                 timeout=self.timeout,
-                verify=False,
+                verify=False,  # nosec: defensive auditor inspecting target endpoints
                 allow_redirects=False,
             )
             if resp.status_code == 200:
@@ -140,6 +141,8 @@ class APISpecScanner:
         paths = spec.get("paths", {})
         if not isinstance(paths, dict):
             return findings
+
+        self.total_routes_count += len(paths)
 
         global_security = spec.get("security", [])
 

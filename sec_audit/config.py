@@ -105,7 +105,13 @@ SAST_EXTENSIONS = {
 IGNORE_DIRS = {
     "node_modules", ".git", ".idea", ".vscode", "venv", ".venv", 
     "env", "__pycache__", "dist", "build", "vendor", ".next", ".nuxt",
-    "target", ".turbo"
+    "target", ".turbo", "ReleaseBundle", "ReleaseOutput", "target_build",
+    "target_cli", "target_rel", "uro_studio.dist", "uro_studio.onefile-build",
+    "bin", "obj", "out", ".output", "coverage", ".pytest_cache",
+    # Third-party vendor and library directories
+    "libs", "lib", "third_party", "thirdparty", "bower_components",
+    # Generated test outputs, reports, and unit test suites
+    "reports", "tests", "test", "__tests__"
 }
 
 # License classification for SCA

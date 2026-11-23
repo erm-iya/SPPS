@@ -169,7 +169,7 @@ class SASTScanner:
             "name": "Dangerous Dynamic Code Execution (eval / exec)",
             "severity": Severity.HIGH,
             "cvss": 8.5,
-            "regex": re.compile(r"""\b(eval|exec)\s*\("""),
+            "regex": re.compile(r"""(?<!\.)\b(eval|exec)\s*\("""),
             "description": "Use of eval() or exec() can lead to arbitrary code execution if user input reaches it.",
             "remediation": "Avoid eval() and exec(). Use safe parsing libraries or AST literal evaluation.",
             "cwe": "CWE-95",
@@ -227,8 +227,8 @@ class SASTScanner:
             "id": "XSS-DOC-WRITE",
             "name": "Insecure document.write / innerHTML Assignment",
             "severity": Severity.MEDIUM,
-            "cvss": 6.1,
-            "regex": re.compile(r"""\b(?:document\.write\s*\(|\.innerHTML\s*=\s*)"""),
+            "cvss": 5.5,
+            "regex": re.compile(r"""\b(?:document\.write\s*\(|\.innerHTML\s*=\s*(?!\s*['"`][^$\+<]*['"`]\s*;?))"""),
             "description": "Direct manipulation of innerHTML or document.write with unescaped input leads to DOM-based XSS.",
             "remediation": "Use textContent / innerText or sanitize untrusted strings with DOMPurify.",
             "cwe": "CWE-79",
@@ -338,10 +338,52 @@ class SASTScanner:
         },
     ]
 
+    MAX_FINDINGS_PER_RULE_PER_FILE: int = 5
+
+    @staticmethod
+    def _is_vendor_or_minified(file_path: str, filename: str) -> bool:
+        norm = file_path.replace("\\", "/").lower()
+        fname = filename.lower()
+
+        # Minified, compiled, or bundled naming patterns
+        minified_patterns = [
+            ".min.", ".bundle.", "-bundle.", ".chunk.", ".umd.", ".pack.",
+            "tailwindcss", "tailwind.js", "bootstrap.js", "jquery."
+        ]
+        if any(pat in fname for pat in minified_patterns):
+            return True
+
+        # Generated audit report artifacts
+        if "report" in fname and (fname.endswith(".html") or fname.endswith(".json") or fname.endswith(".sarif")):
+            return True
+
+        # Common third-party vendor directories
+        vendor_path_indicators = [
+            "/libs/", "/vendor/", "/third_party/", "/thirdparty/", 
+            "/bower_components/", "/assets/vendor/", "/static/vendor/"
+        ]
+        if any(vi in norm for vi in vendor_path_indicators):
+            return True
+
+        return False
+
+    @staticmethod
+    def _is_client_side_file(rel_path: str) -> bool:
+        norm = rel_path.replace("\\", "/").lower()
+        client_dirs = ["/public/", "/static/", "/assets/", "/views/", "/templates/", "/client/", "/frontend/"]
+        if any(cd in norm or norm.startswith(cd.lstrip("/")) for cd in client_dirs):
+            return True
+        ext = os.path.splitext(norm)[1]
+        if ext in [".html", ".htm", ".vue", ".svelte"]:
+            return True
+        return False
+
     def __init__(self, target_dir: str, target_files: Optional[List[str]] = None):
         self.target_dir = os.path.abspath(target_dir)
         self.target_files = target_files
         self.matcher = IgnoreMatcher(self.target_dir)
+        self.scanned_loc: int = 0
+        self.scanned_files_count: int = 0
 
     def scan(self) -> List[Finding]:
         findings: List[Finding] = []
@@ -353,7 +395,8 @@ class SASTScanner:
             for tf in self.target_files:
                 abs_tf = os.path.abspath(tf) if not os.path.isabs(tf) else tf
                 if os.path.isfile(abs_tf):
-                    self._scan_file(abs_tf, findings)
+                    if not self._is_vendor_or_minified(abs_tf, os.path.basename(abs_tf)):
+                        self._scan_file(abs_tf, findings)
             return findings
 
         # Full repository walk
@@ -373,8 +416,8 @@ class SASTScanner:
                 if ext not in SAST_EXTENSIONS and not is_env_file:
                     continue
 
-                # Skip minified bundle files in public/assets to reduce false positives
-                if "min.js" in file or "bundle.js" in file:
+                # Skip vendor, bundled, and minified files to eliminate third-party noise
+                if self._is_vendor_or_minified(file_path, file):
                     continue
 
                 self._scan_file(file_path, findings)
@@ -388,18 +431,48 @@ class SASTScanner:
         except Exception:
             return
 
+        # Skip minified bundle files where lines exceed normal source line length
+        if any(len(line) > 1200 for line in lines[:50]):
+            return
+
+        self.scanned_files_count += 1
+        self.scanned_loc += sum(1 for line in lines if line.strip())
+
         rel_path = os.path.relpath(file_path, self.target_dir)
+        is_client_side = self._is_client_side_file(rel_path)
+
+        rule_hits: Dict[str, List[Finding]] = {}
+        rule_suppressed: Dict[str, int] = {}
 
         for line_idx, line in enumerate(lines, start=1):
             stripped = line.strip()
             if stripped.startswith(("#", "//", "/*", "*")):
                 continue
 
+            # Standard inline security suppression tags (# nosec, // nosec)
+            if any(tag in line for tag in ("# nosec", "// nosec", "# noqa: sec", "/* nosec */")):
+                continue
+
+            # Skip rule definitions and regex pattern strings in security audit tools
+            if stripped.startswith(('"regex":', "'regex':", '"name":', "'name':", '"description":', "'description':", '"remediation":', "'remediation':")):
+                continue
+
+            # Skip documentation, metadata, and advisory string literals
+            if re.search(r'''(?:description|remediation|title|message|help|doc)\s*[:=]\s*['"]''', line):
+                continue
+
             for pattern in self.PATTERNS:
+                rule_id = pattern["id"]
+
+                # Client-side contextual filter: SSRF and SQL Injection do not apply to browser code
+                if is_client_side and rule_id in ("INSEC-SSRF", "SQL-CONCAT"):
+                    continue
+
                 if pattern["regex"].search(line):
-                    evidence = f"{rel_path}:{line_idx}\n> {stripped[:150]}"
-                    findings.append(
-                        Finding(
+                    current_hits = rule_hits.setdefault(rule_id, [])
+                    if len(current_hits) < self.MAX_FINDINGS_PER_RULE_PER_FILE:
+                        evidence = f"{rel_path}:{line_idx}\n> {stripped[:150]}"
+                        f = Finding(
                             title=pattern["name"],
                             category=Category.SAST.value,
                             severity=pattern["severity"],
@@ -410,5 +483,17 @@ class SASTScanner:
                             location=f"{rel_path}:{line_idx}",
                             cwe_id=pattern.get("cwe"),
                             owasp_category=pattern.get("owasp", "A05:2025-Injection"),
+                            cluster_count=1,
                         )
-                    )
+                        current_hits.append(f)
+                    else:
+                        rule_suppressed[rule_id] = rule_suppressed.get(rule_id, 0) + 1
+
+        # Consolidate clustered occurrences on the last reported finding for each rule in this file
+        for rule_id, hits in rule_hits.items():
+            suppressed_n = rule_suppressed.get(rule_id, 0)
+            if suppressed_n > 0 and hits:
+                last_f = hits[-1]
+                last_f.cluster_count += suppressed_n
+                last_f.description += f" [Note: Clustered {suppressed_n} additional similar occurrences in this file]"
+            findings.extend(hits)

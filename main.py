@@ -120,6 +120,11 @@ Examples:
         choices=["CRITICAL", "HIGH", "MEDIUM", "LOW"],
         default=None,
     )
+    parser.add_argument(
+        "--gui",
+        help="Launch modern PyQt6 Graphical User Interface",
+        action="store_true",
+    )
 
     return parser.parse_args()
 
@@ -128,18 +133,23 @@ def interactive_prompt():
     print("=" * 65)
     print("      🔒 SecAudit 2.0 Enterprise - Security & Compliance Auditor")
     print("=" * 65)
+    print("0) Launch Graphical User Interface (PyQt6 GUI)")
     print("1) Scan Live Website (DAST, SSL, DNS, CSP, Tech Stack, Headers)")
     print("2) Scan Source Code, Secrets, Docker & Packages (SAST, IaC, SCA)")
     print("3) Full Enterprise Audit (Both Live Website & Source Code)")
     print("4) Exit")
     print("-" * 65)
 
-    choice = input("Select an option [1-4]: ").strip()
+    choice = input("Select an option [0-4]: ").strip()
 
     target_url = None
     target_dir = None
 
-    if choice == "1":
+    if choice == "0":
+        from sec_audit.gui import run_gui
+        run_gui()
+        sys.exit(0)
+    elif choice == "1":
         target_url = input("Enter website URL (e.g. https://example.com): ").strip()
     elif choice == "2":
         target_dir = input("Enter project directory path [default .]: ").strip() or "."
@@ -155,6 +165,11 @@ def interactive_prompt():
 
 def main():
     args = parse_args()
+
+    if args.gui:
+        from sec_audit.gui import run_gui
+        run_gui()
+        sys.exit(0)
 
     target_url = args.url
     target_dir = args.dir

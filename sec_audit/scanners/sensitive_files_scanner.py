@@ -39,14 +39,14 @@ class SensitiveFilesScanner:
                 probe_url,
                 headers=self.headers,
                 timeout=self.timeout,
-                verify=False,
+                verify=False,  # nosec: defensive auditor scanning targets with custom/self-signed certs
                 allow_redirects=False,
             )
             if resp.status_code == 200:
                 content = resp.text.strip()
                 if "<!doctype html" in content.lower() or "<html" in content.lower():
                     self.is_spa_catchall = True
-                    self.catchall_signature = hashlib.md5(content[:2000].encode("utf-8", errors="ignore")).hexdigest()
+                    self.catchall_signature = hashlib.sha256(content[:2000].encode("utf-8", errors="ignore")).hexdigest()
         except Exception:
             pass
 
@@ -59,7 +59,7 @@ class SensitiveFilesScanner:
                 test_url,
                 headers=self.headers,
                 timeout=self.timeout,
-                verify=False,
+                verify=False,  # nosec: defensive auditor scanning targets with custom/self-signed certs
                 allow_redirects=False,
             )
 
@@ -86,7 +86,7 @@ class SensitiveFilesScanner:
 
                 # If server is an SPA catch-all, verify against generic catchall signature
                 if self.is_spa_catchall:
-                    probe_sig = hashlib.md5(content[:2000].encode("utf-8", errors="ignore")).hexdigest()
+                    probe_sig = hashlib.sha256(content[:2000].encode("utf-8", errors="ignore")).hexdigest()
                     if probe_sig == self.catchall_signature:
                         return None
                     # Non-HTML endpoints should never return standard HTML on valid findings

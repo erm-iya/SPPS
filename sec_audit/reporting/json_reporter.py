@@ -1,3 +1,4 @@
+import os
 import json
 from typing import Optional
 from ..models import ScanResult
@@ -13,5 +14,7 @@ class JSONReporter:
 
     def export(self, filepath: str) -> None:
         data = self.result.to_dict()
-        with open(filepath, "w", encoding="utf-8") as f:
+        target_path = os.path.abspath(filepath)
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(target_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)

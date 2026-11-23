@@ -510,6 +510,72 @@
             </div>
         </section>
 
+        <!-- Project Scale & Sub-Pillars -->
+        <section class="analytics-grid" style="margin-bottom: 2rem;">
+            <div class="chart-card" style="height: auto; min-height: 220px;">
+                <h3>📐 مقیاس و حجم پروژه ممیزی شده (Project Scale & Inventory)</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.5rem;">
+                    <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.9rem; text-align: center;">
+                        <div style="color: var(--text-secondary); font-size: 0.85rem;">خطوط سورس‌کد (Lines of Code)</div>
+                        <div style="color: var(--accent); font-size: 1.5rem; font-weight: bold; margin-top: 0.2rem;">{{ volume_metrics.total_loc | default(0) }}</div>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.9rem; text-align: center;">
+                        <div style="color: var(--text-secondary); font-size: 0.85rem;">فایل‌های بررسی‌شده (Files)</div>
+                        <div style="color: #a7f3d0; font-size: 1.5rem; font-weight: bold; margin-top: 0.2rem;">{{ volume_metrics.total_files | default(0) }}</div>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.9rem; text-align: center;">
+                        <div style="color: var(--text-secondary); font-size: 0.85rem;">پکیج‌ها و وابستگی‌ها (Dependencies)</div>
+                        <div style="color: #fde047; font-size: 1.5rem; font-weight: bold; margin-top: 0.2rem;">{{ volume_metrics.total_dependencies | default(0) }}</div>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.9rem; text-align: center;">
+                        <div style="color: var(--text-secondary); font-size: 0.85rem;">مسیرها و روت‌های API / شبکه</div>
+                        <div style="color: #c084fc; font-size: 1.5rem; font-weight: bold; margin-top: 0.2rem;">{{ volume_metrics.total_endpoints | default(0) }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="chart-card" style="height: auto; min-height: 220px;">
+                <h3>🛡️ نمرات ۴ ستون امنیتی پروژه (Security Sub-Pillars)</h3>
+                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
+                            <span>سورس‌کد و سکرت‌ها (SAST & Secrets)</span>
+                            <strong style="color: #38bdf8;">{{ pillar_scores.sast_score | default(100) }}%</strong>
+                        </div>
+                        <div style="background: #0f172a; border-radius: 5px; height: 8px; overflow: hidden;">
+                            <div class="pillar-bar" data-width="{{ pillar_scores.sast_score | default(100) }}" style="background: #38bdf8; height: 100%; width: 0%; transition: width 0.8s ease;"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
+                            <span>زنجیره تامین و پکیج‌ها (SCA & Dependencies)</span>
+                            <strong style="color: #10b981;">{{ pillar_scores.sca_score | default(100) }}%</strong>
+                        </div>
+                        <div style="background: #0f172a; border-radius: 5px; height: 8px; overflow: hidden;">
+                            <div class="pillar-bar" data-width="{{ pillar_scores.sca_score | default(100) }}" style="background: #10b981; height: 100%; width: 0%; transition: width 0.8s ease;"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
+                            <span>کانتینر و داکر (Container & IaC)</span>
+                            <strong style="color: #f59e0b;">{{ pillar_scores.iac_score | default(100) }}%</strong>
+                        </div>
+                        <div style="background: #0f172a; border-radius: 5px; height: 8px; overflow: hidden;">
+                            <div class="pillar-bar" data-width="{{ pillar_scores.iac_score | default(100) }}" style="background: #f59e0b; height: 100%; width: 0%; transition: width 0.8s ease;"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
+                            <span>سطح حمله وب و API (Network & DAST)</span>
+                            <strong style="color: #a855f7;">{{ pillar_scores.dast_score | default(100) }}%</strong>
+                        </div>
+                        <div style="background: #0f172a; border-radius: 5px; height: 8px; overflow: hidden;">
+                            <div class="pillar-bar" data-width="{{ pillar_scores.dast_score | default(100) }}" style="background: #a855f7; height: 100%; width: 0%; transition: width 0.8s ease;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- Tech Stack & Licenses -->
         {% if detected_tech or license_summary %}
             <div class="info-row">
@@ -568,6 +634,9 @@
                                 <span class="finding-category">{{ finding.category }}</span>
                                 {% if finding.owasp_category %}
                                     <span style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); padding: 0.2rem 0.55rem; border-radius: 6px; font-size: 0.78rem; margin-right: 0.4rem; font-weight: 600;">{{ finding.owasp_category }}</span>
+                                {% endif %}
+                                {% if finding.cluster_count and finding.cluster_count > 1 %}
+                                    <span style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 0.2rem 0.55rem; border-radius: 6px; font-size: 0.78rem; margin-right: 0.4rem; font-weight: 600;">تکرار خوشه‌ای ({{ finding.cluster_count }} مورد)</span>
                                 {% endif %}
                                 <h2 class="finding-title">{{ finding.title }}</h2>
                             </div>
@@ -649,8 +718,16 @@
     <script>
         let currentFilter = 'ALL';
 
-        // Render Charts
+        // Render Charts & Dynamic Bars
         document.addEventListener('DOMContentLoaded', () => {
+            // Animate Pillar Progress Bars
+            document.querySelectorAll('.pillar-bar[data-width]').forEach(el => {
+                const w = el.getAttribute('data-width');
+                if (w !== null) {
+                    el.style.width = w + '%';
+                }
+            });
+
             const stats = JSON.parse(document.getElementById('stats-data')?.textContent || '{}');
             const findings = JSON.parse(document.getElementById('findings-data')?.textContent || '[]');
 

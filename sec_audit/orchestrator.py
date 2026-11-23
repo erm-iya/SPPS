@@ -7,7 +7,7 @@ import os
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional, List
+from typing import Optional, List, Callable
 from .models import ScanResult, Severity, Finding
 from .scanners import (
     HeaderScanner,
@@ -47,6 +47,8 @@ class SecAuditOrchestrator:
         max_workers: int = 6,
         diff_mode: bool = False,
         diff_base: Optional[str] = None,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+        check_interrupted: Optional[Callable[[], None]] = None,
     ):
         self.target_url = target_url
         self.target_dir = target_dir
@@ -55,6 +57,8 @@ class SecAuditOrchestrator:
         self.max_workers = max_workers
         self.diff_mode = diff_mode
         self.diff_base = diff_base
+        self.progress_callback = progress_callback
+        self.check_interrupted = check_interrupted
 
     def _get_git_diff_files(self) -> Optional[List[str]]:
         """
@@ -103,6 +107,11 @@ class SecAuditOrchestrator:
         if self.diff_mode or self.diff_base:
             target_files = self._get_git_diff_files()
 
+        api_scanner = None
+        sast_scanner = None
+        iac_scanner = None
+        sca_scanner = None
+
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_tasks = {}
 
@@ -150,8 +159,21 @@ class SecAuditOrchestrator:
                 future_tasks[executor.submit(lic_scanner.scan)] = "License"
 
             # 4. Collect Results
+            total_tasks = len(future_tasks)
+            completed_count = 0
+            if self.progress_callback:
+                self.progress_callback(5, f"Dispatched {total_tasks} parallel security engines...")
+
             for future in as_completed(future_tasks):
+                if self.check_interrupted:
+                    self.check_interrupted()
+
+                completed_count += 1
                 task_name = future_tasks[future]
+                if self.progress_callback and total_tasks > 0:
+                    pct = 5 + int((completed_count / total_tasks) * 90)
+                    self.progress_callback(pct, f"Completed scanning: {task_name}")
+
                 try:
                     res = future.result()
                     if task_name == "Tech Detector":
@@ -165,8 +187,27 @@ class SecAuditOrchestrator:
                 except Exception:
                     pass
 
+        if self.progress_callback:
+            self.progress_callback(98, "Calculating security score and finalizing metrics...")
+
         # Sort findings by severity
         all_findings.sort(key=lambda f: self.SEVERITY_ORDER.get(f.severity.value, 99))
+
+        # Aggregate project volume and inventory metrics for normalization
+        if sast_scanner:
+            result.volume_metrics.total_loc = sast_scanner.scanned_loc
+            result.volume_metrics.total_files = sast_scanner.scanned_files_count
+        if sca_scanner:
+            result.volume_metrics.total_dependencies = sca_scanner.total_packages_count
+        if iac_scanner:
+            result.volume_metrics.total_manifests = iac_scanner.manifests_count
+
+        total_endpoints = 0
+        if self.target_url:
+            total_endpoints += 8  # Standard DAST probe count (headers, ssl, dns, cors, sensitive files)
+        if api_scanner:
+            total_endpoints += api_scanner.total_routes_count
+        result.volume_metrics.total_endpoints = total_endpoints
 
         result.findings = all_findings
         result.duration_seconds = time.time() - start_time

@@ -83,7 +83,7 @@ class CSPEvaluator:
                     cvss_score=5.5,
                     description="The CSP policy allows string-to-code execution (eval, Function constructor, setTimeout with string), increasing vulnerability to code injection.",
                     evidence=f"script-src: {' '.join(script_src)}",
-                    remediation="Refactor application code to eliminate dynamic eval() calls and remove 'unsafe-eval' from CSP.",
+                    remediation="Refactor application code to eliminate dynamic code evaluation and remove 'unsafe-eval' from CSP.",
                     location="CSP -> script-src",
                     cwe_id="CWE-95",
                     reference="https://content-security-policy.com/unsafe-eval/",

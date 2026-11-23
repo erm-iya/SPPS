@@ -3,6 +3,7 @@ Strix-Style Detailed Markdown Security Audit Reporter
 Generates comprehensive, auditor-ready Markdown reports with OWASP Top 10:2025 mapping and reproducible PoC curls.
 """
 
+import os
 from typing import Optional
 from ..models import ScanResult, Severity
 
@@ -26,7 +27,9 @@ class MarkdownReporter:
 
     def export(self, filepath: str) -> None:
         md = self.generate()
-        with open(filepath, "w", encoding="utf-8") as f:
+        target_path = os.path.abspath(filepath)
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(target_path, "w", encoding="utf-8") as f:
             f.write(md)
 
     def generate(self) -> str:
@@ -48,6 +51,29 @@ class MarkdownReporter:
         # 2. Executive Summary Tables
         lines.append("## 📊 Executive Summary")
         lines.append("")
+
+        # Volume & Scale Inventory
+        vm = r.volume_metrics
+        lines.append("### Project Scale & Volume Inventory")
+        lines.append("| Metric | Value |")
+        lines.append("| :--- | :---: |")
+        lines.append(f"| 📏 Lines of Code (LoC) | `{vm.total_loc:,}` |")
+        lines.append(f"| 📁 Scanned Files | `{vm.total_files:,}` |")
+        lines.append(f"| 📦 Third-Party Dependencies | `{vm.total_dependencies}` |")
+        lines.append(f"| 🌐 Endpoints & Probes Audited | `{vm.total_endpoints}` |")
+        lines.append("")
+
+        # Sub-Pillar Scores
+        ps = r.pillar_scores
+        lines.append("### Security Domain Sub-Pillars")
+        lines.append("| Security Pillar | Health Score | Status |")
+        lines.append("| :--- | :---: | :---: |")
+        lines.append(f"| 💻 Source Code & Secrets (SAST) | **{ps.sast_score}%** | {'✅ Healthy' if ps.sast_score >= 80 else '⚠️ Needs Attention'} |")
+        lines.append(f"| 📦 Supply Chain & Dependencies (SCA) | **{ps.sca_score}%** | {'✅ Healthy' if ps.sca_score >= 80 else '⚠️ Needs Attention'} |")
+        lines.append(f"| 🐳 Infrastructure & Container (IaC) | **{ps.iac_score}%** | {'✅ Healthy' if ps.iac_score >= 80 else '⚠️ Needs Attention'} |")
+        lines.append(f"| 🌐 Attack Surface & Network (DAST/API) | **{ps.dast_score}%** | {'✅ Healthy' if ps.dast_score >= 80 else '⚠️ Needs Attention'} |")
+        lines.append("")
+
         lines.append("### Findings by Severity")
         lines.append("| Severity | Count |")
         lines.append("| :--- | :---: |")

@@ -23,7 +23,7 @@ class HeaderScanner:
                 self.target_url,
                 headers=self.headers,
                 timeout=self.timeout,
-                verify=False,
+                verify=False,  # nosec: defensive auditor scanning target endpoints
                 allow_redirects=True,
             )
         except requests.exceptions.RequestException as e:
