@@ -102,10 +102,14 @@ class TerminalReporter:
             sev_badge = f"[{sev_color}]{f.severity.value}[/{sev_color}]"
 
             details = f"[bold]{f.title}[/bold]\n{f.description}"
+            if f.owasp_category:
+                details += f"\n[bold magenta]OWASP 2025:[/bold magenta] [dim]{f.owasp_category}[/dim]"
             if f.evidence:
                 details += f"\n[dim italic]Evidence: {f.evidence[:80]}...[/dim italic]"
 
             remedy = f"[bold cyan]Fix:[/bold cyan] {f.remediation}"
+            if f.poc_curl:
+                remedy += f"\n[bold green]PoC (curl):[/bold green] [dim]{f.poc_curl[:65]}...[/dim]"
             if f.location:
                 remedy = f"[bold yellow]Loc:[/bold yellow] {f.location}\n" + remedy
 

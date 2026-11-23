@@ -34,20 +34,44 @@ class CSPEvaluator:
         # 1. Check for 'unsafe-inline' in script-src / default-src
         script_src = directives.get("script-src", directives.get("default-src", []))
         if "'unsafe-inline'" in script_src:
-            findings.append(
-                Finding(
-                    title="CSP Contains 'unsafe-inline' in script-src",
-                    category=Category.CSP.value,
-                    severity=Severity.HIGH,
-                    cvss_score=7.1,
-                    description="The Content-Security-Policy allows 'unsafe-inline' scripts, which significantly weakens XSS protection by permitting execution of inline scripts and event handlers.",
-                    evidence=f"script-src: {' '.join(script_src)}",
-                    remediation="Remove 'unsafe-inline' and use cryptographic nonces (nonce-...) or SHA-256 hashes for legitimate inline scripts.",
-                    location=f"CSP -> script-src",
-                    cwe_id="CWE-1021",
-                    reference="https://content-security-policy.com/unsafe-inline/",
-                )
+            has_nonce_or_hash = any(
+                val.startswith(("'nonce-", "'sha256-", "'sha384-", "'sha512-"))
+                for val in script_src
             )
+            if has_nonce_or_hash:
+                findings.append(
+                    Finding(
+                        title="CSP Contains 'unsafe-inline' with Nonce/Hash Fallback",
+                        category=Category.CSP.value,
+                        severity=Severity.LOW,
+                        cvss_score=3.0,
+                        description="CSP specifies 'unsafe-inline' alongside a cryptographic nonce or hash. Modern browsers adhering to CSP Level 2/3 will safely ignore 'unsafe-inline'. It is retained for backward compatibility with legacy browsers.",
+                        evidence=f"script-src: {' '.join(script_src)}",
+                        remediation="If legacy browser support is no longer needed, consider removing 'unsafe-inline'.",
+                        location="CSP -> script-src",
+                        cwe_id="CWE-1021",
+                        reference="https://content-security-policy.com/unsafe-inline/",
+                        poc_curl=f'curl -I -s "{self.target_url}" | grep -i "Content-Security-Policy"',
+                        owasp_category="A02:2025-Security Misconfiguration",
+                    )
+                )
+            else:
+                findings.append(
+                    Finding(
+                        title="CSP Contains 'unsafe-inline' in script-src",
+                        category=Category.CSP.value,
+                        severity=Severity.HIGH,
+                        cvss_score=7.1,
+                        description="The Content-Security-Policy allows 'unsafe-inline' scripts without any cryptographic nonce or hash, which significantly weakens XSS protection by permitting arbitrary inline script execution.",
+                        evidence=f"script-src: {' '.join(script_src)}",
+                        remediation="Remove 'unsafe-inline' and use cryptographic nonces (nonce-...) or SHA-256 hashes for legitimate inline scripts.",
+                        location="CSP -> script-src",
+                        cwe_id="CWE-1021",
+                        reference="https://content-security-policy.com/unsafe-inline/",
+                        poc_curl=f'curl -I -s "{self.target_url}" | grep -i "Content-Security-Policy"',
+                        owasp_category="A02:2025-Security Misconfiguration",
+                    )
+                )
 
         # 2. Check for 'unsafe-eval' in script-src
         if "'unsafe-eval'" in script_src:
@@ -63,6 +87,8 @@ class CSPEvaluator:
                     location="CSP -> script-src",
                     cwe_id="CWE-95",
                     reference="https://content-security-policy.com/unsafe-eval/",
+                    poc_curl=f'curl -I -s "{self.target_url}" | grep -i "Content-Security-Policy"',
+                    owasp_category="A02:2025-Security Misconfiguration",
                 )
             )
 
@@ -79,6 +105,8 @@ class CSPEvaluator:
                     remediation="Replace wildcard '*' with specific trusted origin domains or 'self'.",
                     location="CSP -> script-src",
                     cwe_id="CWE-1021",
+                    poc_curl=f'curl -I -s "{self.target_url}" | grep -i "Content-Security-Policy"',
+                    owasp_category="A02:2025-Security Misconfiguration",
                 )
             )
 
@@ -96,6 +124,8 @@ class CSPEvaluator:
                         remediation="Add \"object-src 'none';\" to your Content-Security-Policy.",
                         location="CSP -> object-src",
                         cwe_id="CWE-1021",
+                        poc_curl=f'curl -I -s "{self.target_url}" | grep -i "Content-Security-Policy"',
+                        owasp_category="A02:2025-Security Misconfiguration",
                     )
                 )
 
@@ -111,6 +141,8 @@ class CSPEvaluator:
                     remediation="Add \"frame-ancestors 'self';\" or \"frame-ancestors 'none';\" to your CSP.",
                     location="CSP -> frame-ancestors",
                     cwe_id="CWE-1021",
+                    poc_curl=f'curl -I -s "{self.target_url}" | grep -i "Content-Security-Policy"',
+                    owasp_category="A02:2025-Security Misconfiguration",
                 )
             )
 
@@ -125,6 +157,8 @@ class CSPEvaluator:
                     remediation="Add \"base-uri 'self';\" to your CSP header.",
                     location="CSP -> base-uri",
                     cwe_id="CWE-1021",
+                    poc_curl=f'curl -I -s "{self.target_url}" | grep -i "Content-Security-Policy"',
+                    owasp_category="A02:2025-Security Misconfiguration",
                 )
             )
 

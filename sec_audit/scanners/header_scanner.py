@@ -64,6 +64,8 @@ class HeaderScanner:
                         cwe_id=rule.get("cwe"),
                         reference=rule.get("reference"),
                         fix_snippet=FixGenerator.get_header_fix(header),
+                        poc_curl=f'curl -I -s "{self.target_url}" | grep -i "{header}"',
+                        owasp_category=rule.get("owasp", "A02:2025-Security Misconfiguration"),
                     )
                 )
             elif header == "Content-Security-Policy":
@@ -92,6 +94,8 @@ class HeaderScanner:
                     location="HTTP Response Headers",
                     cwe_id="CWE-200",
                     reference="https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/01-Information_Gathering/02-Fingerprint_Web_Server",
+                    poc_curl=f'curl -I -s "{self.target_url}" | grep -iE "Server|X-Powered-By"',
+                    owasp_category="A02:2025-Security Misconfiguration",
                 )
             )
 
@@ -110,6 +114,8 @@ class HeaderScanner:
                     location="HTTP Headers -> Access-Control-Allow-Origin",
                     cwe_id="CWE-942",
                     reference="https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS",
+                    poc_curl=f'curl -I -s -X OPTIONS "{self.target_url}" -H "Origin: https://attacker.com"',
+                    owasp_category="A01:2025-Broken Access Control & SSRF",
                 )
             )
 
@@ -144,6 +150,8 @@ class HeaderScanner:
                         location=f"Set-Cookie: {cookie_name}",
                         cwe_id="CWE-614",
                         reference="https://owasp.org/www-community/controls/SecureFlag",
+                        poc_curl=f'curl -I -s "{self.target_url}" | grep -i "Set-Cookie"',
+                        owasp_category="A07:2025-Authentication Failures",
                     )
                 )
 

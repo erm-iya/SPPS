@@ -30,10 +30,13 @@ class SARIFReporter:
         results = []
 
         for f in self.result.findings:
-            rule_id = f.cwe_id or f.title.replace(" ", "_")
+            # Generate a distinct rule_id to prevent metadata collision between findings
+            clean_title_slug = f.title.replace(" ", "_")
+            rule_id = f"{f.cwe_id}_{clean_title_slug}" if f.cwe_id else clean_title_slug
+
             if rule_id not in rule_indices:
                 rule_indices[rule_id] = len(rules)
-                rules.append({
+                rule_entry = {
                     "id": rule_id,
                     "name": f.title,
                     "shortDescription": {"text": f.title},
@@ -43,20 +46,24 @@ class SARIFReporter:
                         "text": f"Remediation:\n{f.remediation}",
                         "markdown": f"**Remediation:**\n{f.remediation}",
                     },
-                })
+                }
+                if f.cwe_id:
+                    rule_entry["properties"] = {"cwe": f.cwe_id}
+                rules.append(rule_entry)
 
             rule_idx = rule_indices[rule_id]
 
-            # Parse location (filepath:line)
+            # Parse location (filepath:line), handling Windows drive letters (e.g. C:\path\file:10)
             file_uri = "index.html"
             line_num = 1
             if f.location:
                 if ":" in f.location:
-                    parts = f.location.split(":")
-                    file_uri = parts[0].replace("\\", "/")
-                    try:
-                        line_num = int(parts[1])
-                    except ValueError:
+                    loc_path, loc_line = f.location.rsplit(":", 1)
+                    if loc_line.isdigit():
+                        file_uri = loc_path.replace("\\", "/")
+                        line_num = max(1, int(loc_line))
+                    else:
+                        file_uri = f.location.replace("\\", "/")
                         line_num = 1
                 else:
                     file_uri = f.location.replace("\\", "/")

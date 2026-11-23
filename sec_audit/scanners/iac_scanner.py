@@ -7,6 +7,7 @@ import re
 from typing import List
 from ..models import Finding, Severity, Category
 from ..config import IGNORE_DIRS
+from ..ignore_matcher import IgnoreMatcher
 
 
 class IaCScanner:
@@ -24,8 +25,13 @@ class IaCScanner:
         "1433": "MS SQL Server",
     }
 
+    K8S_KINDS = {
+        "deployment", "pod", "daemonset", "statefulset", "job", "cronjob", "replicaset"
+    }
+
     def __init__(self, target_dir: str):
         self.target_dir = os.path.abspath(target_dir)
+        self.matcher = IgnoreMatcher(self.target_dir)
 
     def scan(self) -> List[Finding]:
         findings: List[Finding] = []
@@ -33,10 +39,15 @@ class IaCScanner:
             return findings
 
         for root, dirs, files in os.walk(self.target_dir):
-            dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
+            dirs[:] = [
+                d for d in dirs 
+                if not self.matcher.is_ignored(os.path.join(root, d), is_dir=True)
+            ]
 
             for file in files:
                 filepath = os.path.join(root, file)
+                if self.matcher.is_ignored(filepath, is_dir=False):
+                    continue
                 relpath = os.path.relpath(filepath, self.target_dir)
                 filename_lower = file.lower()
 
@@ -47,6 +58,10 @@ class IaCScanner:
                 # 2. Audit Docker Compose
                 elif filename_lower in ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"]:
                     findings.extend(self._audit_docker_compose(filepath, relpath))
+
+                # 3. Audit Kubernetes Manifests
+                elif filename_lower.endswith((".yaml", ".yml")):
+                    findings.extend(self._audit_k8s_manifest(filepath, relpath))
 
         return findings
 
@@ -65,9 +80,9 @@ class IaCScanner:
             if stripped.startswith("#"):
                 continue
 
-            # Check unpinned/latest base image
+            # Check unpinned/latest base image (excluding scratch)
             if re.match(r"^FROM\s+[a-zA-Z0-9_\-\.\/]+:latest", stripped, re.IGNORECASE) or (
-                stripped.startswith("FROM ") and ":" not in stripped and "AS" not in stripped
+                stripped.startswith("FROM ") and ":" not in stripped and "AS" not in stripped and not stripped.strip().lower().endswith("scratch")
             ):
                 findings.append(
                     Finding(
@@ -80,6 +95,7 @@ class IaCScanner:
                         remediation="Pin the base image to a specific SHA digest or stable semantic version tag (e.g. node:20-alpine or python:3.12-slim).",
                         location=f"{relpath}:{idx}",
                         cwe_id="CWE-1188",
+                        owasp_category="A03:2025-Software Supply Chain Failures",
                     )
                 )
 
@@ -96,6 +112,7 @@ class IaCScanner:
                         remediation="Do not bake secrets into images. Inject secrets at runtime using environment files or secrets managers.",
                         location=f"{relpath}:{idx}",
                         cwe_id="CWE-798",
+                        owasp_category="A04:2025-Cryptographic Failures",
                     )
                 )
 
@@ -115,6 +132,7 @@ class IaCScanner:
                     location=relpath,
                     cwe_id="CWE-250",
                     reference="https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html",
+                    owasp_category="A02:2025-Security Misconfiguration",
                 )
             )
 
@@ -142,6 +160,7 @@ class IaCScanner:
                     remediation="Remove 'privileged: true' and grant only specific required Linux capabilities (cap_add).",
                     location=relpath,
                     cwe_id="CWE-250",
+                    owasp_category="A02:2025-Security Misconfiguration",
                 )
             )
 
@@ -161,7 +180,101 @@ class IaCScanner:
                             remediation=f"Bind port to localhost only ('127.0.0.1:{port}:{port}') or use internal Docker network without host port mapping.",
                             location=f"{relpath}:{idx}",
                             cwe_id="CWE-668",
+                            poc_curl=f'curl -v "telnet://target-ip:{port}"',
+                            owasp_category="A01:2025-Broken Access Control & SSRF",
                         )
                     )
+
+        return findings
+
+    def _audit_k8s_manifest(self, filepath: str, relpath: str) -> List[Finding]:
+        findings = []
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+        except Exception:
+            return findings
+
+        if "apiVersion:" not in content or "kind:" not in content:
+            return findings
+
+        kind_match = re.search(r"^\s*kind:\s*([a-zA-Z0-9]+)", content, re.MULTILINE)
+        if not kind_match or kind_match.group(1).lower() not in self.K8S_KINDS:
+            return findings
+
+        k8s_kind = kind_match.group(1)
+
+        # 1. Check privileged container execution
+        if re.search(r"privileged:\s*true", content, re.IGNORECASE):
+            findings.append(
+                Finding(
+                    title=f"Kubernetes {k8s_kind} Container Runs with Privileged Access",
+                    category=Category.IAC.value,
+                    severity=Severity.CRITICAL,
+                    cvss_score=9.0,
+                    description=f"Manifest '{relpath}' configures 'privileged: true', granting container processes root access to host node capabilities.",
+                    evidence=f"privileged: true in {relpath}",
+                    remediation="Disable privileged container mode and grant only required Linux capabilities via cap_add/cap_drop.",
+                    location=relpath,
+                    cwe_id="CWE-250",
+                    owasp_category="A02:2025-Security Misconfiguration",
+                )
+            )
+
+        # 2. Check allowPrivilegeEscalation
+        if re.search(r"allowPrivilegeEscalation:\s*true", content, re.IGNORECASE):
+            findings.append(
+                Finding(
+                    title=f"Kubernetes {k8s_kind} Allows Privilege Escalation",
+                    category=Category.IAC.value,
+                    severity=Severity.HIGH,
+                    cvss_score=7.8,
+                    description=f"Manifest '{relpath}' permits child processes to gain more privileges than their parent process.",
+                    evidence=f"allowPrivilegeEscalation: true in {relpath}",
+                    remediation="Set 'securityContext.allowPrivilegeEscalation: false' on container specifications.",
+                    location=relpath,
+                    cwe_id="CWE-250",
+                    owasp_category="A02:2025-Security Misconfiguration",
+                )
+            )
+
+        # 3. Check dangerous hostPath mounts
+        hostpath_matches = re.findall(r"hostPath:\s*\n\s*path:\s*([^\s]+)", content, re.IGNORECASE)
+        for hpath in hostpath_matches:
+            clean_hp = hpath.strip("'\"")
+            if clean_hp in ["/", "/etc", "/var/run/docker.sock", "/run/containerd/containerd.sock", "/root"]:
+                findings.append(
+                    Finding(
+                        title=f"Kubernetes {k8s_kind} Mounts Sensitive Host Path ({clean_hp})",
+                        category=Category.IAC.value,
+                        severity=Severity.CRITICAL,
+                        cvss_score=9.3,
+                        description=f"Mounting sensitive host path '{clean_hp}' allows container processes to escape and compromise the host node.",
+                        evidence=f"hostPath.path: {clean_hp} in {relpath}",
+                        remediation="Avoid mounting sensitive host paths into containers. Use PersistentVolumes or ConfigMaps instead.",
+                        location=relpath,
+                        cwe_id="CWE-668",
+                        owasp_category="A01:2025-Broken Access Control & SSRF",
+                    )
+                )
+
+        # 4. Check unpinned / latest images
+        image_matches = re.findall(r"image:\s*([a-zA-Z0-9_\-\.\/\@\:]+)", content)
+        for img in image_matches:
+            if img.endswith(":latest") or (":" not in img and "@" not in img):
+                findings.append(
+                    Finding(
+                        title=f"Kubernetes {k8s_kind} Uses Unpinned ':latest' Container Image",
+                        category=Category.IAC.value,
+                        severity=Severity.LOW,
+                        cvss_score=3.5,
+                        description=f"Container image '{img}' in {relpath} uses ':latest' or lacks an explicit version tag.",
+                        evidence=f"image: {img} in {relpath}",
+                        remediation="Pin container images to an immutable SHA256 digest or a specific semantic release tag.",
+                        location=relpath,
+                        cwe_id="CWE-1188",
+                        owasp_category="A03:2025-Software Supply Chain Failures",
+                    )
+                )
 
         return findings

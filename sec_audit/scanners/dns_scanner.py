@@ -20,12 +20,34 @@ class DNSScanner:
         "https://dns.google/resolve",
     ]
 
+    COMMON_TWO_PART_TLDS = {
+        "co.uk", "org.uk", "gov.uk", "ac.uk", "me.uk",
+        "com.au", "net.au", "org.au", "edu.au", "gov.au",
+        "co.jp", "ne.jp", "or.jp", "ac.jp", "go.jp",
+        "com.br", "net.br", "org.br", "gov.br",
+        "com.tr", "org.tr", "gov.tr", "edu.tr", "net.tr",
+        "co.nz", "net.nz", "org.nz", "govt.nz",
+        "co.za", "org.za", "gov.za",
+        "com.ar", "gov.ar", "org.ar",
+        "com.mx", "org.mx", "edu.mx", "gob.mx",
+        "com.sg", "edu.sg", "gov.sg",
+        "com.tw", "org.tw", "gov.tw",
+        "ac.ir", "co.ir", "gov.ir", "org.ir", "id.ir", "sch.ir", "net.ir",
+    }
+
     def __init__(self, target_url: str, timeout: int = DEFAULT_TIMEOUT):
-        parsed = urlparse(target_url)
-        self.hostname = parsed.hostname or ""
-        # Strip subdomains for apex domain DMARC/SPF lookups if applicable
-        parts = self.hostname.split(".")
-        if len(parts) >= 2:
+        url_to_parse = target_url
+        if "://" not in url_to_parse:
+            url_to_parse = "https://" + url_to_parse
+
+        parsed = urlparse(url_to_parse)
+        self.hostname = parsed.hostname or url_to_parse.split("/")[2].split(":")[0]
+
+        # Accurately strip subdomains for apex domain DMARC/SPF lookups
+        parts = self.hostname.split(".") if self.hostname else []
+        if len(parts) >= 3 and f"{parts[-2]}.{parts[-1]}".lower() in self.COMMON_TWO_PART_TLDS:
+            self.apex_domain = ".".join(parts[-3:])
+        elif len(parts) >= 2:
             self.apex_domain = ".".join(parts[-2:])
         else:
             self.apex_domain = self.hostname
@@ -78,6 +100,8 @@ class DNSScanner:
                     location=f"DNS -> {self.apex_domain} (TXT)",
                     cwe_id="CWE-290",
                     reference="https://www.cloudflare.com/learning/dns/dns-records/dns-spf-record/",
+                    poc_curl=f'curl -s -H "Accept: application/dns-json" "https://cloudflare-dns.com/dns-query?name={self.apex_domain}&type=TXT"',
+                    owasp_category="A02:2025-Security Misconfiguration",
                 )
             )
         else:
@@ -94,6 +118,8 @@ class DNSScanner:
                         remediation="Change '+all' to '~all' (SoftFail) or '-all' (HardFail) in your SPF record.",
                         location=f"DNS -> {self.apex_domain} (SPF)",
                         cwe_id="CWE-290",
+                        poc_curl=f'curl -s -H "Accept: application/dns-json" "https://cloudflare-dns.com/dns-query?name={self.apex_domain}&type=TXT"',
+                        owasp_category="A02:2025-Security Misconfiguration",
                     )
                 )
 
@@ -114,6 +140,8 @@ class DNSScanner:
                     location=f"DNS -> {dmarc_name}",
                     cwe_id="CWE-290",
                     reference="https://dmarc.org/overview/",
+                    poc_curl=f'curl -s -H "Accept: application/dns-json" "https://cloudflare-dns.com/dns-query?name={dmarc_name}&type=TXT"',
+                    owasp_category="A02:2025-Security Misconfiguration",
                 )
             )
         else:
@@ -130,6 +158,8 @@ class DNSScanner:
                         remediation="Upgrade DMARC policy to 'p=quarantine' or 'p=reject' once verified.",
                         location=f"DNS -> {dmarc_name}",
                         cwe_id="CWE-290",
+                        poc_curl=f'curl -s -H "Accept: application/dns-json" "https://cloudflare-dns.com/dns-query?name={dmarc_name}&type=TXT"',
+                        owasp_category="A02:2025-Security Misconfiguration",
                     )
                 )
 
@@ -147,6 +177,8 @@ class DNSScanner:
                     location=f"DNS -> {self.apex_domain} (CAA)",
                     cwe_id="CWE-295",
                     reference="https://support.dnsimple.com/articles/caa-record/",
+                    poc_curl=f'curl -s -H "Accept: application/dns-json" "https://cloudflare-dns.com/dns-query?name={self.apex_domain}&type=CAA"',
+                    owasp_category="A02:2025-Security Misconfiguration",
                 )
             )
 

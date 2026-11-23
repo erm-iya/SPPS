@@ -545,12 +545,12 @@
         <!-- Controls & Filters -->
         <div class="controls-card">
             <div class="filter-buttons">
-                <button class="filter-btn active" onclick="filterSeverity('ALL')">همه ({{ findings|length }})</button>
-                <button class="filter-btn" onclick="filterSeverity('CRITICAL')">بحرانی</button>
-                <button class="filter-btn" onclick="filterSeverity('HIGH')">بالا</button>
-                <button class="filter-btn" onclick="filterSeverity('MEDIUM')">متوسط</button>
-                <button class="filter-btn" onclick="filterSeverity('LOW')">پایین</button>
-                <button class="filter-btn" onclick="filterSeverity('INFO')">اطلاعاتی</button>
+                <button class="filter-btn active" onclick="filterSeverity('ALL', event)">همه ({{ findings|length }})</button>
+                <button class="filter-btn" onclick="filterSeverity('CRITICAL', event)">بحرانی</button>
+                <button class="filter-btn" onclick="filterSeverity('HIGH', event)">بالا</button>
+                <button class="filter-btn" onclick="filterSeverity('MEDIUM', event)">متوسط</button>
+                <button class="filter-btn" onclick="filterSeverity('LOW', event)">پایین</button>
+                <button class="filter-btn" onclick="filterSeverity('INFO', event)">اطلاعاتی</button>
             </div>
             <div class="search-box">
                 <input type="text" id="searchInput" placeholder="جستجو در یافته‌ها یا CWE..." oninput="searchFindings()">
@@ -561,10 +561,14 @@
         <main id="findingsList">
             {% if findings %}
                 {% for finding in findings %}
+                    {% set finding_idx = loop.index0 %}
                     <article class="finding-card" data-severity="{{ finding.severity }}">
                         <div class="finding-header">
                             <div>
                                 <span class="finding-category">{{ finding.category }}</span>
+                                {% if finding.owasp_category %}
+                                    <span style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); padding: 0.2rem 0.55rem; border-radius: 6px; font-size: 0.78rem; margin-right: 0.4rem; font-weight: 600;">{{ finding.owasp_category }}</span>
+                                {% endif %}
                                 <h2 class="finding-title">{{ finding.title }}</h2>
                             </div>
                             <div class="badge-group">
@@ -590,6 +594,13 @@
                             <div class="code-block">{{ finding.evidence }}</div>
                         {% endif %}
 
+                        {% if finding.poc_curl %}
+                            <div style="margin: 0.8rem 0;">
+                                <div style="font-size: 0.85rem; font-weight: bold; color: #10b981; margin-bottom: 0.35rem;">🎯 دستور اثبات و بازتولید آسیب‌پذیری (Strix-Style Reproducible PoC):</div>
+                                <div class="code-block" style="background: #064e3b; border: 1px solid #059669; color: #a7f3d0; direction: ltr; text-align: left; font-family: monospace;">{{ finding.poc_curl }}</div>
+                            </div>
+                        {% endif %}
+
                         <div class="remediation-box">
                             <div class="remediation-title">💡 راهکار رفع مشکل (Remediation):</div>
                             <div class="remediation-text">{{ finding.remediation }}</div>
@@ -599,15 +610,21 @@
                             <div class="snippet-box">
                                 <div class="snippet-tabs">
                                     {% for server_type, snippet_code in finding.fix_snippet.items() %}
-                                        <button class="snippet-tab {% if loop.first %}active{% endif %}" onclick="switchSnippet(this, '{{ loop.index0 }}_{{ loop.parent.loop.index0 }}')">
+                                        <button class="snippet-tab {% if loop.first %}active{% endif %}" onclick="switchSnippet(this, '{{ loop.index0 }}_{{ finding_idx }}')">
                                             {{ server_type|upper }}
                                         </button>
                                     {% endfor %}
                                 </div>
                                 {% for server_type, snippet_code in finding.fix_snippet.items() %}
-                                    <div class="snippet-content" id="snip_{{ loop.index0 }}_{{ loop.parent.loop.index0 }}" style="display: {% if loop.first %}block{% else %}none{% endif %};">
+                                    {% if loop.first %}
+                                        <div class="snippet-content" id="snip_{{ loop.index0 }}_{{ finding_idx }}" style="display: block;">
 {{ snippet_code }}
-                                    </div>
+                                        </div>
+                                    {% else %}
+                                        <div class="snippet-content" id="snip_{{ loop.index0 }}_{{ finding_idx }}" style="display: none;">
+{{ snippet_code }}
+                                        </div>
+                                    {% endif %}
                                 {% endfor %}
                             </div>
                         {% endif %}
@@ -626,13 +643,16 @@
         </footer>
     </div>
 
+    <script id="stats-data" type="application/json">{{ stats | tojson }}</script>
+    <script id="findings-data" type="application/json">{{ findings | tojson }}</script>
+
     <script>
         let currentFilter = 'ALL';
 
         // Render Charts
         document.addEventListener('DOMContentLoaded', () => {
-            const stats = {{ stats | tojson }};
-            const findings = {{ findings | tojson }};
+            const stats = JSON.parse(document.getElementById('stats-data')?.textContent || '{}');
+            const findings = JSON.parse(document.getElementById('findings-data')?.textContent || '[]');
 
             // 1. Severity Doughnut Chart
             const sevCtx = document.getElementById('severityChart');
@@ -696,10 +716,13 @@
             }
         });
 
-        function filterSeverity(severity) {
+        function filterSeverity(severity, evt) {
             currentFilter = severity;
             document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
+            const targetEl = evt ? evt.target : (window.event ? window.event.target : null);
+            if (targetEl) {
+                targetEl.classList.add('active');
+            }
             applyFilters();
         }
 

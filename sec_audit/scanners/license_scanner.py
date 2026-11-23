@@ -9,6 +9,7 @@ import re
 from typing import Dict, List, Tuple
 from ..models import Finding, Severity, Category
 from ..config import IGNORE_DIRS, RESTRICTIVE_LICENSES
+from ..ignore_matcher import IgnoreMatcher
 
 
 class LicenseScanner:
@@ -18,6 +19,7 @@ class LicenseScanner:
 
     def __init__(self, target_dir: str):
         self.target_dir = os.path.abspath(target_dir)
+        self.matcher = IgnoreMatcher(self.target_dir)
 
     def scan(self) -> Tuple[List[Finding], Dict[str, int]]:
         findings: List[Finding] = []
@@ -28,10 +30,15 @@ class LicenseScanner:
 
         # Parse package.json
         for root, dirs, files in os.walk(self.target_dir):
-            dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
+            dirs[:] = [
+                d for d in dirs 
+                if not self.matcher.is_ignored(os.path.join(root, d), is_dir=True)
+            ]
 
             for file in files:
                 fpath = os.path.join(root, file)
+                if self.matcher.is_ignored(fpath, is_dir=False):
+                    continue
                 relpath = os.path.relpath(fpath, self.target_dir)
 
                 if file.lower() == "package.json":
@@ -81,6 +88,7 @@ class LicenseScanner:
                         remediation="Review commercial license compatibility with your organization's legal/compliance guidelines.",
                         location=filepath,
                         cwe_id="CWE-1104",
+                        owasp_category="A03:2025-Software Supply Chain Failures",
                     )
                 )
                 break

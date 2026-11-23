@@ -13,6 +13,7 @@ from .sast_scanner import SASTScanner
 from .iac_scanner import IaCScanner
 from .sca_scanner import SCAScanner
 from .license_scanner import LicenseScanner
+from .api_spec_scanner import APISpecScanner
 
 __all__ = [
     "HeaderScanner",
@@ -26,4 +27,5 @@ __all__ = [
     "IaCScanner",
     "SCAScanner",
     "LicenseScanner",
+    "APISpecScanner",
 ]

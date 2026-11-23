@@ -24,6 +24,20 @@ class Category(str, Enum):
     IAC = "Infrastructure as Code (Docker/K8s)"
     SCA = "Dependency Vulnerabilities"
     LICENSE = "License Compliance"
+    API = "API Security & OpenAPI Specifications"
+
+
+class OWASP2025(str, Enum):
+    A01 = "A01:2025-Broken Access Control & SSRF"
+    A02 = "A02:2025-Security Misconfiguration"
+    A03 = "A03:2025-Software Supply Chain Failures"
+    A04 = "A04:2025-Cryptographic Failures"
+    A05 = "A05:2025-Injection"
+    A06 = "A06:2025-Insecure Design"
+    A07 = "A07:2025-Authentication Failures"
+    A08 = "A08:2025-Software and Data Integrity Failures"
+    A09 = "A09:2025-Security Logging and Alerting Failures"
+    A10 = "A10:2025-Mishandling of Exceptional Conditions"
 
 
 @dataclass
@@ -39,6 +53,8 @@ class Finding:
     reference: Optional[str] = None
     cvss_score: Optional[float] = None
     fix_snippet: Optional[Dict[str, str]] = None  # e.g. {"nginx": "...", "apache": "...", "express": "..."}
+    poc_curl: Optional[str] = None  # Strix-style reproducible PoC curl command
+    owasp_category: Optional[str] = None  # OWASP Top 10:2025 classification
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -53,6 +69,8 @@ class Finding:
             "reference": self.reference,
             "cvss_score": self.cvss_score,
             "fix_snippet": self.fix_snippet,
+            "poc_curl": self.poc_curl,
+            "owasp_category": self.owasp_category,
         }
 
 
@@ -64,6 +82,7 @@ class ScanResult:
     duration_seconds: float = 0.0
     findings: List[Finding] = field(default_factory=list)
     stats: Dict[str, int] = field(default_factory=dict)
+    owasp_summary: Dict[str, int] = field(default_factory=dict)
     detected_tech: List[Dict[str, str]] = field(default_factory=list)  # e.g. [{"name": "React", "category": "Frontend"}]
     license_summary: Dict[str, int] = field(default_factory=dict)
     security_score: int = 100
@@ -71,7 +90,7 @@ class ScanResult:
 
     def calculate_score(self) -> None:
         """
-        Calculate overall security score (0 to 100) and assign grade.
+        Calculate overall security score (0 to 100), assign grade, and compute OWASP 2025 summary.
         """
         counts = {
             Severity.CRITICAL.value: 0,
@@ -81,10 +100,15 @@ class ScanResult:
             Severity.INFO.value: 0,
         }
 
+        owasp_counts = {}
+
         for f in self.findings:
             counts[f.severity.value] = counts.get(f.severity.value, 0) + 1
+            if f.owasp_category:
+                owasp_counts[f.owasp_category] = owasp_counts.get(f.owasp_category, 0) + 1
 
         self.stats = counts
+        self.owasp_summary = owasp_counts
 
         score = 100
         score -= counts[Severity.CRITICAL.value] * 25
@@ -117,6 +141,7 @@ class ScanResult:
             "security_score": self.security_score,
             "grade": self.grade,
             "stats": self.stats,
+            "owasp_summary": self.owasp_summary,
             "detected_tech": self.detected_tech,
             "license_summary": self.license_summary,
             "findings": [f.to_dict() for f in self.findings],

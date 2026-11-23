@@ -2,9 +2,16 @@ import socket
 import ssl
 from datetime import datetime, timezone
 from urllib.parse import urlparse
-from typing import List
+from typing import List, Optional
 from ..models import Finding, Severity, Category
 from ..config import DEFAULT_TIMEOUT
+
+try:
+    from cryptography import x509
+    from cryptography.hazmat.backends import default_backend
+    CRYPTOGRAPHY_AVAILABLE = True
+except ImportError:
+    CRYPTOGRAPHY_AVAILABLE = False
 
 
 class SSLScanner:
@@ -48,24 +55,26 @@ class SSLScanner:
         try:
             with socket.create_connection((hostname, port), timeout=self.timeout) as sock:
                 with context.wrap_socket(sock, server_hostname=hostname) as ssock:
-                    cert = ssock.getpeercert(binary_form=True)
+                    der_cert = ssock.getpeercert(binary_form=True)
                     tls_version = ssock.version()
                     cipher = ssock.cipher()
 
-                    # Re-get parsed certificate dict with verification enabled to check certificate validity
-                    verify_context = ssl.create_default_context()
-                    is_valid = True
-                    verification_error = None
-                    try:
-                        with socket.create_connection((hostname, port), timeout=self.timeout) as vsock:
-                            with verify_context.wrap_socket(vsock, server_hostname=hostname) as vssock:
-                                parsed_cert = vssock.getpeercert()
-                    except Exception as ve:
-                        is_valid = False
-                        verification_error = str(ve)
-                        parsed_cert = None
+                    # 1. Parse certificate details using cryptography if available
+                    expiry_date: Optional[datetime] = None
+                    cert_parsed_via_crypto = False
 
-                    # Check TLS Protocol Version
+                    if CRYPTOGRAPHY_AVAILABLE and der_cert:
+                        try:
+                            crypto_cert = x509.load_der_x509_certificate(der_cert, default_backend())
+                            try:
+                                expiry_date = crypto_cert.not_valid_after_utc
+                            except AttributeError:
+                                expiry_date = crypto_cert.not_valid_after.replace(tzinfo=timezone.utc)
+                            cert_parsed_via_crypto = True
+                        except Exception:
+                            pass
+
+                    # 2. Check TLS Protocol Version
                     if tls_version in ["SSLv2", "SSLv3", "TLSv1", "TLSv1.1"]:
                         findings.append(
                             Finding(
@@ -78,10 +87,24 @@ class SSLScanner:
                                 location=f"{hostname}:{port}",
                                 cwe_id="CWE-326",
                                 reference="https://ssl-config.mozilla.org/",
+                                poc_curl=f'openssl s_client -connect {hostname}:{port} -servername {hostname} -tls1_1',
+                                owasp_category="A04:2025-Cryptographic Failures",
                             )
                         )
 
-                    # Check Certificate Verification
+                    # 3. Check Certificate Trust Verification
+                    verify_context = ssl.create_default_context()
+                    is_valid = True
+                    verification_error = None
+                    parsed_cert = None
+                    try:
+                        with socket.create_connection((hostname, port), timeout=self.timeout) as vsock:
+                            with verify_context.wrap_socket(vsock, server_hostname=hostname) as vssock:
+                                parsed_cert = vssock.getpeercert()
+                    except Exception as ve:
+                        is_valid = False
+                        verification_error = str(ve)
+
                     if not is_valid and verification_error:
                         findings.append(
                             Finding(
@@ -94,46 +117,54 @@ class SSLScanner:
                                 location=f"{hostname}:{port}",
                                 cwe_id="CWE-295",
                                 reference="https://cwe.mitre.org/data/definitions/295.html",
+                                poc_curl=f'openssl s_client -connect {hostname}:{port} -servername {hostname}',
+                                owasp_category="A04:2025-Cryptographic Failures",
                             )
                         )
 
-                    # Check Expiry Date if cert was parsed
-                    if parsed_cert and "notAfter" in parsed_cert:
-                        not_after_str = parsed_cert["notAfter"]
-                        # Example format: 'May 25 12:00:00 2025 GMT'
+                    # Fallback to standard ssl parsed_cert expiry if cryptography was unavailable
+                    if not cert_parsed_via_crypto and parsed_cert and "notAfter" in parsed_cert:
                         try:
-                            expiry_date = datetime.strptime(not_after_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
-                            now = datetime.now(timezone.utc)
-                            days_remaining = (expiry_date - now).days
-
-                            if days_remaining < 0:
-                                findings.append(
-                                    Finding(
-                                        title="SSL Certificate Expired",
-                                        category=Category.SSL_TLS.value,
-                                        severity=Severity.CRITICAL,
-                                        description=f"The SSL/TLS certificate expired on {not_after_str} ({abs(days_remaining)} days ago). Browsers will block access.",
-                                        evidence=f"Expiry Date: {not_after_str}",
-                                        remediation="Immediately renew and deploy your SSL/TLS certificate.",
-                                        location=f"{hostname}:{port}",
-                                        cwe_id="CWE-298",
-                                    )
-                                )
-                            elif days_remaining <= 14:
-                                findings.append(
-                                    Finding(
-                                        title=f"SSL Certificate Expiring Soon ({days_remaining} Days Remaining)",
-                                        category=Category.SSL_TLS.value,
-                                        severity=Severity.HIGH if days_remaining <= 7 else Severity.MEDIUM,
-                                        description=f"The SSL/TLS certificate will expire on {not_after_str}.",
-                                        evidence=f"Days remaining: {days_remaining}",
-                                        remediation="Renew your SSL certificate before it expires to prevent service disruption.",
-                                        location=f"{hostname}:{port}",
-                                        cwe_id="CWE-298",
-                                    )
-                                )
+                            expiry_date = datetime.strptime(parsed_cert["notAfter"], "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
                         except Exception:
                             pass
+
+                    # 4. Evaluate Certificate Expiration
+                    if expiry_date:
+                        now = datetime.now(timezone.utc)
+                        days_remaining = (expiry_date - now).days
+                        expiry_str = expiry_date.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+                        if days_remaining < 0:
+                            findings.append(
+                                Finding(
+                                    title="SSL Certificate Expired",
+                                    category=Category.SSL_TLS.value,
+                                    severity=Severity.CRITICAL,
+                                    description=f"The SSL/TLS certificate expired on {expiry_str} ({abs(days_remaining)} days ago). Browsers will block access.",
+                                    evidence=f"Expiry Date: {expiry_str}",
+                                    remediation="Immediately renew and deploy your SSL/TLS certificate.",
+                                    location=f"{hostname}:{port}",
+                                    cwe_id="CWE-298",
+                                    poc_curl=f'openssl s_client -connect {hostname}:{port} -servername {hostname}',
+                                    owasp_category="A04:2025-Cryptographic Failures",
+                                )
+                            )
+                        elif days_remaining <= 14:
+                            findings.append(
+                                Finding(
+                                    title=f"SSL Certificate Expiring Soon ({days_remaining} Days Remaining)",
+                                    category=Category.SSL_TLS.value,
+                                    severity=Severity.HIGH if days_remaining <= 7 else Severity.MEDIUM,
+                                    description=f"The SSL/TLS certificate will expire on {expiry_str}.",
+                                    evidence=f"Days remaining: {days_remaining}",
+                                    remediation="Renew your SSL certificate before it expires to prevent service disruption.",
+                                    location=f"{hostname}:{port}",
+                                    cwe_id="CWE-298",
+                                    poc_curl=f'openssl s_client -connect {hostname}:{port} -servername {hostname}',
+                                    owasp_category="A04:2025-Cryptographic Failures",
+                                )
+                            )
 
         except Exception as e:
             findings.append(

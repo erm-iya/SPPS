@@ -43,6 +43,8 @@ class CORSMethodsScanner:
                         location=f"{self.target_url} (HTTP TRACE)",
                         cwe_id="CWE-16",
                         reference="https://owasp.org/www-community/attacks/Cross_Site_Tracing",
+                        poc_curl=f'curl -i -s -X TRACE "{self.target_url}"',
+                        owasp_category="A02:2025-Security Misconfiguration",
                     )
                 )
         except Exception:
@@ -84,6 +86,8 @@ class CORSMethodsScanner:
                             location="CORS Policy -> Preflight OPTIONS",
                             cwe_id="CWE-942",
                             reference="https://portswigger.net/web-security/cors",
+                            poc_curl=f'curl -I -s -X OPTIONS "{self.target_url}" -H "Origin: {test_origin}" -H "Access-Control-Request-Method: POST"',
+                            owasp_category="A01:2025-Broken Access Control & SSRF",
                         )
                     )
                     break
