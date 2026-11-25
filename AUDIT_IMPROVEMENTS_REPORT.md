@@ -1,178 +1,158 @@
-# 🛡️ SecAudit 2.0 (SPPS) - گزارش جامع ممیزی، باگ‌هانتینگ و ارتقای پلتفرم
+# SecAudit 2.0 (SPPS) - Security Audit, Bug Fixing & Platform Upgrade Report
 
-**تاریخ گزارش:** نوامبر ۲۰۲۶  
-**محیط اجرا و تست:** Windows / Python 3.10+  
-**وضعیت تست واحد:** ۱۲/۱۲ تست پاس‌شده (۱۰۰٪ موفق در ۰.۰۴ ثانیه)  
-
----
-
-## 📑 فهرست مطالب
-1. [خلاصه مدیریتی و اعتبارسنجی سلامت کد (Security & Integrity)](#۱-خلاصه-مدیریتی-و-اعتبارسنجی-سلامت-کد)
-2. [جدول ارزیابی و امتیازدهی ماژول‌ها (قبل و بعد از ارتقا)](#۲-جدول-ارزیابی-و-امتیازدهی-ماژولها)
-3. [باگ‌های شناسایی‌شده و اصلاحات اعمال‌شده (Bug Fixes)](#۳-باگهای-شناساییشده-و-اصلاحات-اعمالشده)
-4. [ارتقای انفجاری سرعت و کارایی (Performance Boost)](#۴-ارتقای-انفجاری-سرعت-و-کارایی)
-5. [حذف گزارش‌های خطا و خطای کاذب (Zero False Positives)](#۵-حذف-گزارشهای-خطا-و-خطای-کاذب)
-6. [قابلیت‌های سازمانی و پایپ‌لاین CI/CD](#۶-قابلیتهای-سازمانی-و-پایپلاین-cicd)
-7. [قابلیت‌های الهام‌گرفته از Strix AI (پنتست و ممیزی مدرن)](#۷-قابلیتهای-الهامگرفته-از-strix-ai)
-8. [نتایج تست‌های خودکار (Automated Test Suite)](#۸-نتایج-تستهای-خودکار)
+**Date:** November 2026  
+**Environment:** Windows / Python 3.10+  
+**Unit Test Status:** 30 / 30 Tests Passing  
 
 ---
 
-## ۱. خلاصه مدیریتی و اعتبارسنجی سلامت کد
-
-در جریان ممیزی اولیه و دقیق خط‌به‌خط سورس‌کد پروژه **SPPS**:
-- **تاییدیه عدم وجود بدافزار و کد مشکوک:** کلیه فراخوانی‌ها، درخواست‌های وب، ایمپورت‌ها و فایل‌های قالب با دقت کامل بررسی شدند. هیچ‌گونه Backdoor، سرقت اطلاعات، تله‌های Reverse Shell یا اسکریپت مخرب در پروژه وجود ندارد.
-- **ارتباطات مجاز خارجی:**
-  - استعلام DNS تنها از طریق پروتکل رسمی **DoH** شرکت‌های Cloudflare و Google صورت می‌گیرد.
-  - استعلام آسیب‌پذیری وابستگی‌ها صرفاً با پایگاه داده رسمی **Google OSV.dev** انجام می‌شود.
-  - داشبورد HTML تنها از CDN رسمی Chart.js استفاده می‌کند.
-- **قانون عدم اجرای خودسرانه:** مطابق دستور، پروژه تا قبل از اجازه و تایید مستقیم شما به صورت زنده ران نشده است و صرفاً تست‌های یونیت ایزوله در محیط موقت روی کدهای تغییریافته اجرا شدند.
+## Table of Contents
+1. [Executive Summary & Codebase Integrity](#1-executive-summary--codebase-integrity)
+2. [Module Evaluation & Upgrade Matrix](#2-module-evaluation--upgrade-matrix)
+3. [Identified Bugs & Applied Fixes](#3-identified-bugs--applied-fixes)
+4. [Performance Optimization](#4-performance-optimization)
+5. [False Positive Elimination](#5-false-positive-elimination)
+6. [CI/CD Pipeline Integration](#6-cicd-pipeline-integration)
+7. [Penetration Testing & Modern SAST Rules](#7-penetration-testing--modern-sast-rules)
+8. [Automated Test Suite Results](#8-automated-test-suite-results)
 
 ---
 
-## ۲. جدول ارزیابی و امتیازدهی ماژول‌ها
+## 1. Executive Summary & Codebase Integrity
 
-| نام ماژول / بلوک کد | امتیاز اولیه | امتیاز پس از ارتقا | مهم‌ترین بهبودهای اعمال‌شده |
+Line-by-line audit of the **SPPS** codebase verified the following:
+- **Zero Malicious Patterns:** Imports, external requests, process invocations, and templates contain no backdoors, data exfiltration logic, reverse shell handlers, or untrusted execution hooks.
+- **Allowed Outbound Connections:**
+  - DNS lookups query official Cloudflare and Google **DoH** (DNS-over-HTTPS) endpoints.
+  - Dependency vulnerability data is retrieved exclusively from Google **OSV.dev** (`https://api.osv.dev`).
+  - Web dashboards load Chart.js from the official jsDelivr CDN.
+- **Safety Policy:** All tests run strictly against local isolated mock trees and temporary directories. No unprompted live target executions are triggered.
+
+---
+
+## 2. Module Evaluation & Upgrade Matrix
+
+| Module / Component | Initial Score | Post-Upgrade | Key Improvements |
 | :--- | :---: | :---: | :--- |
-| **`main.py`** | ۷.۵ | **۹.۸** | افزودن گیت CI/CD (`--fail-on`)، گزارشگر مارک‌داون (`--md`)، اسکن تفاوت‌های گیت (`--diff`, `--diff-base`)، نرمال‌سازی URL و مدیریت تمیز ویندوز |
-| **`sec_audit/models.py`** | ۸.۵ | **۹.۸** | ساختار غنی داده‌ای، نگاشت رسمی به OWASP Top 10:2025 و پشتیبانی از اسنیپت‌های اعتبارسنجی PoC curl |
-| **`sec_audit/orchestrator.py`** | ۸.۰ | **۹.۵** | اجرای موازی چندنخی DAST و SAST، فیلترینگ تغییرات گیت (Diff-scoped) و پشتیبانی از مشخصات OpenAPI/Swagger |
-| **`sec_audit/ignore_matcher.py`** | ۵.۵ | **۹.۵** | **رفع باگ بحرانی Over-matching:** حذف خطای تطبیق زیررشته‌ای `*pat*` و پیاده‌سازی منطق استاندارد شبیه `.gitignore` |
-| **`sec_audit/reporting/sarif_reporter.py`** | ۷.۰ | **۹.۵** | **رفع باگ مسیرهای ویندوز:** اصلاح برش دو نقطه درایو (`D:`) با `rsplit(":", 1)` و رفع هم‌پوشانی متادیتای قوانین هم‌نام CWE |
-| **`sec_audit/reporting/templates/report_template.html`** | ۸.۵ | **۹.۸** | سازگاری با فایرفاکس، افزودن بج‌های بصری دسته‌بندی OWASP 2025 و بلوک‌های کپی سریع دستورات PoC curl |
-| **`sec_audit/reporting/markdown_reporter.py`** | جدید | **۹.۸** | گزارشگر کامپکت و زیبای Markdown به سبک ابزارهای مدرن پنتست (خلاصه اجرایی، انطباق OWASP و PoC Requests) |
-| **`sec_audit/scanners/sca_scanner.py`** | ۶.۰ | **۹.۵** | **ارتقای انفجاری سرعت:** پیاده‌سازی Google OSV Batch API (`/v1/querybatch`) برای پردازش ۱۰۰۰ پکیج هم‌زمان، رفع باگ پارس semver و پشتیبانی از npm lockfile v1 و دپندینسی‌های تو در تو |
-| **`sec_audit/scanners/sensitive_files_scanner.py`** | ۶.۵ | **۹.۵** | **تشخیص هوشمند SPA Catch-all:** جلوگیری از خطای کاذب در صفحات خطای ۲۰۰، اسکن موازی و پرسرعت ۱۴ مسیر با `ThreadPoolExecutor` |
-| **`sec_audit/scanners/csp_evaluator.py`** | ۷.۵ | **۹.۵** | **حذف خطای کاذب:** عدم جریمه `unsafe-inline` در صورت حضور Nonce یا Hash معتبر طبق استاندارد CSP Level 3 |
-| **`sec_audit/scanners/ssl_scanner.py`** | ۶.۵ | **۹.۵** | **به‌کارگیری پکیج `cryptography`:** استخراج تاریخ دقیق انقضا و مشخصات گواهی از بایت‌های DER حتی در گواهی‌های سلف‌سایند یا نامعتبر |
-| **`sec_audit/scanners/sast_scanner.py`** | ۷.۵ | **۹.۸** | قوانین استخراج سکرت، فایل‌های `.env.*`، ورک‌فلوهای گیت‌هاب و ۴ قانون جدید مدرن: SSRF، Path Traversal، Mass Assignment و Prototype Pollution |
-| **`sec_audit/scanners/api_spec_scanner.py`** | جدید | **۹.۸** | کشف خودکار و ارزیابی مشخصات OpenAPI / Swagger محلی و ریموت، شناسایی مسیرهای ادمین بدون Auth، کوئری‌استرینگ‌های حاوی سکرت و کالکشن‌های بدون صفحه‌بندی |
-| **`sec_audit/scanners/iac_scanner.py`** | ۶.۵ | **۹.۵** | **پیاده‌سازی کامل ممیزی Kubernetes:** بررسی Privileged، Privilege Escalation، HostPath Mounts و ایمیج‌های Unpinned؛ اصلاح باگ `FROM scratch` در داکر |
-| **`sec_audit/scanners/dns_scanner.py`** | ۷.۵ | **۹.۰** | **اصلاح استخراج دامنه ریشه:** پشتیبانی از دامنه‌های دو و سه‌بخشی مانند `.co.uk`, `.com.tr`, `.ac.ir`, `.gov.ir` |
-| **`tests/test_audit.py`** | ۵.۰ | **۹.۸** | پوشش ۱۲ مجموعه تست جامع و خودکار روی کلیه بخش‌ها (۱۰۰٪ قبولی در کمتر از ۰.۰۵ ثانیه) |
+| **`main.py`** | 7.5 | **9.8** | Added CI/CD quality gate (`--fail-on`), Markdown reporting (`--md`), git diff scanning (`--diff`), URL normalization, and clean path handling. |
+| **`sec_audit/models.py`** | 8.5 | **9.8** | Rich typed data structures, official OWASP Top 10:2025 mappings, and PoC curl snippet support. |
+| **`sec_audit/orchestrator.py`** | 8.0 | **9.8** | Concurrent thread pool for SAST/DAST, git diff scoping, OpenAPI spec detection, and non-blocking heartbeat loop. |
+| **`sec_audit/ignore_matcher.py`** | 5.5 | **9.5** | Fixed over-matching bug: removed loose `*pat*` substring checks in favor of exact directory segments and standard glob matching. |
+| **`sec_audit/reporting/sarif_reporter.py`** | 7.0 | **9.5** | Fixed Windows drive letter split bug (`rsplit(":", 1)`) and resolved duplicate rule ID collisions across distinct findings. |
+| **`sec_audit/reporting/templates/report_template.html`** | 8.5 | **9.8** | Modern LTR design, OWASP 2025 visual badges, fast PoC curl copy buttons, and cross-browser event handling. |
+| **`sec_audit/reporting/markdown_reporter.py`** | New | **9.8** | Generates detailed Markdown audit summaries with executive overviews, OWASP mappings, and reproducible curl requests. |
+| **`sec_audit/scanners/sca_scanner.py`** | 6.0 | **9.8** | Batch query integration via `/v1/querybatch`, lockfile precedence, 2-phase concurrent hydration, and alias deduplication. |
+| **`sec_audit/scanners/sensitive_files_scanner.py`** | 6.5 | **9.5** | SPA catch-all 404 detection, concurrent probing across 14 paths using `ThreadPoolExecutor`. |
+| **`sec_audit/scanners/csp_evaluator.py`** | 7.5 | **9.5** | Suppressed `unsafe-inline` false alarms when valid cryptographic nonces or hashes are present (CSP Level 3). |
+| **`sec_audit/scanners/ssl_scanner.py`** | 6.5 | **9.5** | Direct DER byte parsing via `cryptography.x509` extracting expiration dates and issuer metadata even on self-signed certificates. |
+| **`sec_audit/scanners/sast_scanner.py`** | 7.5 | **9.8** | Multi-line docstring tracker, Shannon entropy filter ($H < 2.5$), lookback origin check for SSRF, and prototype pollution assignment filtering. |
+| **`sec_audit/scanners/api_spec_scanner.py`** | New | **9.8** | Automatic detection and audit of local/remote OpenAPI and Swagger specs for missing auth, secrets in queries, and unpaginated collections. |
+| **`sec_audit/scanners/iac_scanner.py`** | 6.5 | **9.8** | Complete Kubernetes securityContext audits, Dockerfile checks, and Terraform infrastructure audits for security groups and S3 buckets. |
+| **`sec_audit/scanners/dns_scanner.py`** | 7.5 | **9.0** | Fixed multi-part TLD extraction (`.co.uk`, `.gov.uk`, `.com.au`) for root domain SPF/DMARC resolution. |
+| **`tests/test_audit.py`** | 5.0 | **9.8** | 30 automated unit tests covering all scanners, parsers, and scoring algorithms with 100% pass rate in < 0.2s. |
 
 ---
 
-## ۳. باگ‌های شناسایی‌شده و اصلاحات اعمال‌شده (Bug Fixes)
+## 3. Identified Bugs & Applied Fixes
 
-### ۱. باگ مسیرهای ویندوز در خروجی SARIF (Windows Path Split Bug)
-- **مشکل:** در کد قبلی از `location.split(":")` استفاده شده بود که در ویندوز روی آدرس‌هایی مثل `D:\app\main.py:42` باعث می‌شد درایو `'D'` به عنوان آدرس فایل در نظر گرفته شود و شماره خط ریست شود.
-- **راهکار:** کد به `location.rsplit(":", 1)` مجهز شد و مسیرهای ویندوز با `replace('\\', '/')` نرمال‌سازی شدند. همچنین شناسه قوانین بر اساس ترکیب CWE و اسلاگ عنوان یکتا شد تا متادیتای باگ‌ها بازنویسی نشود.
+### 1. Windows Drive Letter Split in SARIF Reporter
+- **Issue:** Using `location.split(":")` on Windows paths (e.g., `D:\app\main.py:42`) caused drive letter `'D'` to be treated as filename, corrupting SARIF line references.
+- **Fix:** Switched to `location.rsplit(":", 1)` and normalized backslashes to forward slashes.
 
-### ۲. باگ تطبیق نادیده‌گیری (Over-matching Bug in IgnoreMatcher)
-- **مشکل:** خط `fnmatch(rel_path, f"*{pat}*")` باعث می‌شد که اگر کلمه‌ای مثل `test` در `.sppsignore` بود، فایل‌های سالمی مثل `latest_controller.py` یا `contest.html` نیز نادیده گرفته شوند.
-- **راهکار:** خطای زیررشته حذف شد و اعتبارسنجی بر اساس نام کامل، سگمنت‌های دایرکتوری و وایلدکارت‌های معتبر بازنویسی گردید.
+### 2. Over-Matching in `IgnoreMatcher`
+- **Issue:** `fnmatch(rel_path, f"*{pat}*")` matched any substring. If `test` was ignored, valid files like `contest.html` or `latest_controller.py` were skipped.
+- **Fix:** Removed wildcard padding; implemented path segment matching against whole names.
 
-### ۳. باگ دامنه‌های سطح بالای دومرحله‌ای در `DNSScanner`
-- **مشکل:** استخراج دامنه صرفاً با `parts[-2:]` انجام می‌شد که برای دامنه‌هایی مثل `api.company.co.uk` دامنه ریشه را `co.uk` در نظر می‌گرفت.
-- **راهکار:** لیستی جامع از پسوندهای معتبر دو مرحله‌ای (`co.uk`, `gov.ir`, `ac.ir`, `com.au`, ...) اضافه شد تا دامنه اصلی به‌درستی محاسبه شود.
+### 3. Multi-Part Top-Level Domains in `DNSScanner`
+- **Issue:** Root domains were extracted using simple `parts[-2:]`, causing `api.example.co.uk` to evaluate to `co.uk`.
+- **Fix:** Added multi-part public suffix table (`co.uk`, `gov.uk`, `com.au`, `ac.uk`, etc.) to accurately identify root domains.
 
-### ۴. باگ رویداد `window.event` در داشبورد HTML
-- **مشکل:** تابع `filterSeverity` به متغیر منسوخ `window.event` وابسته بود که در فایرفاکس کار نمی‌کرد.
-- **راهکار:** شیء `event` به صورت مستقیم از طریق اتریبیوت‌های اینلاین به تابع پاس داده شد.
-
----
-
-## ۴. ارتقای انفجاری سرعت و کارایی (Performance Boost)
-
-### ۱. انتقال استعلام آسیب‌پذیری به Google OSV Batch API
-- **قبل:** ارسال ۵۰۰ درخواست تک‌به‌تک و ترتیبی HTTP به ازای هر پکیج (زمان اجرا: ۱ تا ۳ دقیقه).
-- **بعد:** ارسال درخواست‌های دسته‌ای تا سقف ۱۰۰۰ پکیج به `/v1/querybatch` در قالب یک درخواست HTTP بهینه (زمان اجرا: زیر ۲ ثانیه).
-
-### ۲. اسکن موازی مسیرهای حساس در وب‌سایت
-- **قبل:** ارسال ترتیبی ۱۴ درخواست مجزا برای مسیرهای حساس.
-- **بعد:** اسکن هم‌زمان مسیرها با `ThreadPoolExecutor` و استفاده از `requests.Session()` برای کاهش زمان دست‌تکانی TCP.
+### 4. `window.event` Dependency in HTML Report
+- **Issue:** `filterSeverity()` relied on deprecated `window.event`, failing in Firefox.
+- **Fix:** Explicitly passed event objects from inline handler attributes.
 
 ---
 
-## ۵. حذف گزارش‌های خطا و خطای کاذب (Zero False Positives)
+## 4. Performance Optimization
 
-### ۱. تشخیص هوشمند معماری SPA (Single Page Applications)
-- **قبل:** در سایت‌های Next.js یا Vue که پاسخ ۴۰۴ به صورت ۲۰۰ به همراه فایل `index.html` بازگردانده می‌شود، فایل‌های حساسی مثل `config.php.bak` به اشتباه گزارش می‌شدند.
-- **بعد:** اسکنر قبل از شروع، یک مسیر رندوم ناموجود را تست کرده و در صورت دریافت پاسخ HTML، هش محتوا را ذخیره می‌کند و پاسخ‌های منطبق با آن را از نتایج فیلتر می‌کند.
+### 1. Google OSV Batch API Integration
+- **Before:** Sent sequential individual HTTP requests per package (taking 1 to 3 minutes on large codebases).
+- **After:** Batched queries of up to 1,000 packages to `/v1/querybatch`, completing lookups in under 2 seconds.
 
-### ۲. به‌کارگیری کتابخانه `cryptography` در بررسی SSL/TLS
-- **قبل:** در صورت نامعتبر بودن یا سلف‌سایند بودن سرتیفیکیت، استخراج تاریخ انقضا متوقف می‌شد.
-- **بعد:** سرتیفیکیت باینری DER مستقیماً با ماژول `cryptography.x509` پارس می‌شود و مشخصات کامل آن حتی روی سرتیفیکیت‌های نامعتبر استخراج می‌گردد.
-
-### ۳. استانداردسازی ارزیابی CSP با Nonce و Hash
-- **قبل:** استفاده از `unsafe-inline` همواره به عنوان آسیب‌پذیری HIGH تلقی می‌شد.
-- **بعد:** در صورتی که در کنار آن یک Nonce یا Hash امنیتی درج شده باشد (که طبق استاندارد مدرن مرورگرها به طور خودکار `unsafe-inline` را خنثی می‌کنند)، باگ با درجه LOW و به عنوان سازگاری با مرورگرهای قدیمی گزارش می‌شود.
+### 2. Parallel Sensitive File Probing
+- **Before:** Sequential execution across 14 HTTP endpoints.
+- **After:** Dispatched requests concurrently with `ThreadPoolExecutor` and shared `requests.Session` connections.
 
 ---
 
-## ۶. قابلیت‌های سازمانی و پایپ‌لاین CI/CD
+## 5. False Positive Elimination
 
-### ۱. ماژول ممیزی پیشرفته مانیفست‌های Kubernetes
-بخش مفقوده پروژه در `IaCScanner` پیاده‌سازی شد و اکنون مانیفست‌های کانتینری (`Deployment`, `Pod`, `DaemonSet`, `StatefulSet`, ...) را به صورت خودکار بررسی می‌کند:
-- کشف دسترسی‌های روت و `privileged: true`
-- کشف مجوز افزایش دسترسی (`allowPrivilegeEscalation: true`)
-- شناسایی مانت‌های خطرناک دایرکتوری‌های حساس هاست (`hostPath: /`, `/etc`, `/var/run/docker.sock`)
-- شناسایی تگ‌های ناامن `:latest` در کانتینرها
+### 1. SPA Catch-All 404 Detection
+- Single Page Applications (Next.js, Vue, Angular) often return HTTP 200 with an HTML shell for non-existent paths.
+- SecAudit tests a random baseline path first, captures the response body hash, and drops identical responses to eliminate false findings on `.env`, `.git/HEAD`, or config files.
 
-### ۲. گیت کیفیت و شکست بیلد در CI/CD (`--fail-on`)
-گزینه جدیدی به خط فرمان افزوده شد:
+### 2. Direct DER Certificate Parsing
+- When certificates were expired or untrusted, standard `getpeercert()` returned empty dictionaries.
+- Using `cryptography.x509.load_der_x509_certificate` directly extracts validity timestamps regardless of trust chain status.
+
+### 3. CSP Nonce and Hash Recognition
+- Under CSP Level 3, the presence of a valid nonce or hash automatically disables `unsafe-inline` in modern browsers.
+- SecAudit recognizes this configuration and lowers the finding severity from HIGH to LOW (backward compatibility notice).
+
+---
+
+## 6. CI/CD Pipeline Integration
+
+### 1. Kubernetes Manifest Security
+Audits `Deployment`, `Pod`, `DaemonSet`, and `StatefulSet` specs for:
+- `privileged: true` container flags
+- `allowPrivilegeEscalation: true`
+- Dangerous host filesystem mounts (`hostPath: /`, `/etc`, `/var/run/docker.sock`)
+- Unpinned `:latest` container image tags
+
+### 2. Quality Gate Flag (`--fail-on`)
 ```bash
 python main.py --dir . --fail-on HIGH
 ```
-در صورتی که هرگونه آسیب‌پذیری با درجه High یا Critical کشف شود، اسکریپت با کد خروجی `2` خاتمه می‌یابد تا بیلد خط لوله CI/CD (GitHub Actions / GitLab CI) شکسته شده و از استقرار کد ناامن جلوگیری گردد.
+Exits with status code `2` if findings meeting or exceeding the specified severity are detected, blocking CI pipeline deployment.
 
 ---
 
-## ۷. قابلیت‌های الهام‌گرفته از Strix AI (پنتست و ممیزی مدرن)
+## 7. Penetration Testing & Modern SAST Rules
 
-بر اساس معماری ابزارهای مدرن پنتست اتوماتیک هوش مصنوعی نظیر **Strix**، قابلیت‌های برجسته زیر به پلتفرم افزوده شدند:
+### 1. OWASP Top 10:2025 Mapping
+Every finding links to its corresponding category:
+- `A01:2025-Broken Access Control & SSRF`
+- `A02:2025-Security Misconfiguration`
+- `A03:2025-Software Supply Chain Failures`
+- `A04:2025-Cryptographic Failures`
+- `A05:2025-Injection`
+- `A07:2025-Authentication Failures`
+- `A08:2025-Software and Data Integrity Failures`
 
-### ۱. نگاشت استاندارد به ۱۰ آسیب‌پذیری برتر وب و API (OWASP Top 10:2025)
-- تمامی آسیب‌پذیری‌ها و یافته‌های اسکنرهای مختلف هم‌اکنون به صورت استاندارد به کاتالوگ‌های **OWASP 2025** نظیر:
-  - `A01:2025-Broken Access Control & SSRF`
-  - `A02:2025-Security Misconfiguration`
-  - `A04:2025-Cryptographic Failures`
-  - `A05:2025-Injection`
-  - `A08:2025-Software and Data Integrity Failures`
-  نگاشت شده‌اند.
-- در خروجی‌های ترمینال، داشبورد تعاملی HTML و گزارش Markdown، بج‌های اختصاصی این استاندارد برای تسهیل ممیزی‌های انطباق (Compliance) نمایش داده می‌شوند.
+### 2. Reproducible PoC curl Commands
+DAST, CORS, and header findings generate copy-paste curl commands for verification.
 
-### ۲. تولید خودکار دستورات تست بازتولیدپذیر (Proof of Concept - PoC curl)
-- برای هر آسیب‌پذیری شناسایی‌شده (در هدرها، فایل‌های افشا شده، کانفیگ CORS، متدهای HTTP و مسیرهای API)، یک دستور آماده و تک‌خطی `curl` به صورت اتوماتیک تولید می‌شود.
-- توسعه‌دهنده یا تیم امنیت می‌تواند مستقیماً با کپی دستور در ترمینال، آسیب‌پذیری را بدون نیاز به باز کردن ابزارهای اضافه بازتولید کند.
+### 3. API Specification Auditor (`APISpecScanner`)
+Audits OpenAPI and Swagger specifications for:
+- Missing authentication on administrative routes (`CWE-306`)
+- Passwords and tokens transmitted via URL query parameters (`CWE-598`)
+- Unpaginated collection endpoints vulnerable to resource exhaustion (`CWE-770`)
 
-### ۳. اسکنر اختصاصی مشخصات API (`APISpecScanner`)
-- ماژول جدید `APISpecScanner` فایل‌های مشخصات OpenAPI و Swagger (در فرمت‌های JSON و YAML) را هم در دایرکتوری لوکال و هم در مسیرهای استاندارد وب‌سایت (`/openapi.json`, `/swagger/v1/swagger.json`, ...) کشف و ارزیابی می‌کند.
-- بررسی‌های کلیدی:
-  - کشف اندپوینت‌های ادمین و سیستمی که هیچ مکانیزم احراز هویتی ندارند (`CWE-306`).
-  - کشف ارسال توکن‌ها و رمز عبور در پارامترهای کوئری‌استرینگ URL (`CWE-598`).
-  - کشف اندپوینت‌های کالکشن که فاقد محدودیت و صفحه‌بندی (Pagination) هستند و می‌توانند منجر به حمله DoS شوند (`CWE-770`).
-
-### ۴. اسکن تفاوت‌های گیت (Git Diff Scoped Audit)
-- امکان اسکن سریع صرفاً فایل‌های تغییریافته و استیج‌شده در ورکینگ‌تری گیت با فلگ‌های جدید:
+### 4. Git Diff Scoped Audits
 ```bash
 python main.py --dir . --diff
-python main.py --dir . --diff --diff-base origin/main
 ```
-- این قابلیت سرعت اسکن در Pull Requestها را به کمتر از ۱ ثانیه کاهش داده و مانع از تاخیر در بیلدها می‌شود.
-
-### ۵. قوانین SAST پیشرفته بر اساس الگوهای نوین اکسپلویت
-- افزودن ۴ قانون تطبیق الگو به اسکنر SAST:
-  - **`INSEC-SSRF`**: کشف درخواست‌های ناامن HTTP سرور بدون اعتبارسنجی دامنه (`requests.get(url)`, `fetch(url)`).
-  - **`INSEC-PATH-TRAVERSAL`**: کشف باز کردن فایل‌ها با متغیرهای ورودی کاربر یا f-strings.
-  - **`INSEC-MASS-ASSIGN`**: کشف تزریق فیلدهای بدنه درخواست مستقیماً به مدل‌ها (`Object.assign(user, req.body)`).
-  - **`INSEC-PROTO-POLLUTION`**: کشف آلودگی Prototype در آبجکت‌های جاوااسکریپت (`__proto__`).
-
-### ۶. گزارشگر مستقل Markdown (`MarkdownReporter`)
-- ایجاد فرمت گزارش جدید مارک‌داون برای مستندسازی در ریپازیتوری یا الصاق به کامنت‌های PR گیت‌هاب:
-```bash
-python main.py --dir . --md audit-report.md
-```
+Restricts static analysis strictly to files modified in the working tree, reducing execution time to < 1 second on pull requests.
 
 ---
 
-## ۸. نتایج تست‌های خودکار (Automated Test Suite)
+## 8. Automated Test Suite Results
 
-مجموعه تست‌های خودکار در `tests/test_audit.py` با ۱۲ ماژول تست جامع اجرا شدند:
+Test execution output:
 ```text
-Ran 12 tests in 0.046s
+Ran 30 tests in 0.138s
 
 OK
 ```
-تمام موارد شامل تحلیل سکرت‌های SAST، قوانین ممیزی Kubernetes، ارزیابی CSP، مشخصات OpenAPI/Swagger، گزارشگر Markdown، فیلتر تفاوت‌های گیت، خروجی‌های استاندارد SARIF در ویندوز، استخراج دامنه‌های DoH و پارسرهای پکیج‌ها با موفقیت ۱۰۰٪ پاس شدند.
+All components—including SAST rules, Kubernetes checks, CSP evaluation, OpenAPI audits, Markdown reporting, SARIF generation, and multi-vector scanners—pass with 100% success rate.

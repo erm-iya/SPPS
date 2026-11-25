@@ -1,6 +1,6 @@
 """
-Strix-Style Detailed Markdown Security Audit Reporter
-Generates comprehensive, auditor-ready Markdown reports with OWASP Top 10:2025 mapping and reproducible PoC curls.
+Detailed Markdown Security Audit Reporter
+Generates structured Markdown reports with OWASP Top 10:2025 mapping and reproducible PoC curls.
 """
 
 import os
@@ -110,6 +110,9 @@ class MarkdownReporter:
             lines.append(f"### {idx}. [{badge}] {f.title}")
             lines.append("")
             lines.append(f"- **Category:** `{f.category}`")
+            lines.append(f"- **Status (Closure Discipline):** `{f.closure_state}`")
+            if f.counterevidence:
+                lines.append(f"- **Counterevidence / Context:** `{f.counterevidence}`")
             if f.owasp_category:
                 lines.append(f"- **OWASP Top 10:2025:** `{f.owasp_category}`")
             if f.cwe_id:

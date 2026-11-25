@@ -21,6 +21,13 @@ from .scanners import (
     SCAScanner,
     LicenseScanner,
     APISpecScanner,
+    CICDScanner,
+    GraphQLScanner,
+    JWTScanner,
+    WebSocketScanner,
+    SSTIScanner,
+    NoSQLIScanner,
+    XXEScanner,
 )
 
 
@@ -108,9 +115,13 @@ class SecAuditOrchestrator:
             target_files = self._get_git_diff_files()
 
         api_scanner = None
+        graphql_scanner = None
         sast_scanner = None
         iac_scanner = None
         sca_scanner = None
+        cicd_scanner = None
+        jwt_scanner = None
+        ws_scanner = None
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_tasks = {}
@@ -135,7 +146,7 @@ class SecAuditOrchestrator:
                 tech_detector = TechDetector(self.target_url, timeout=self.timeout)
                 future_tasks[executor.submit(tech_detector.detect)] = "Tech Detector"
 
-            # 2. Dispatch API Specification Scanner (OpenAPI / Swagger)
+            # 2. Dispatch API Specification & Query Scanners (OpenAPI, Swagger & GraphQL)
             if self.target_dir or self.target_url:
                 api_scanner = APISpecScanner(
                     target_dir=self.target_dir,
@@ -144,7 +155,14 @@ class SecAuditOrchestrator:
                 )
                 future_tasks[executor.submit(api_scanner.scan)] = "API Spec"
 
-            # 3. Dispatch SAST, IaC, SCA & License Scanners
+                graphql_scanner = GraphQLScanner(
+                    target_dir=self.target_dir,
+                    target_url=self.target_url,
+                    timeout=self.timeout,
+                )
+                future_tasks[executor.submit(graphql_scanner.scan)] = "GraphQL"
+
+            # 3. Dispatch SAST, IaC, SCA, CI/CD, JWT, WebSocket & License Scanners
             if self.target_dir:
                 sast_scanner = SASTScanner(self.target_dir, target_files=target_files)
                 future_tasks[executor.submit(sast_scanner.scan)] = "SAST"
@@ -154,6 +172,24 @@ class SecAuditOrchestrator:
 
                 sca_scanner = SCAScanner(self.target_dir, check_online=self.check_online_sca, timeout=self.timeout)
                 future_tasks[executor.submit(sca_scanner.scan)] = "SCA"
+
+                cicd_scanner = CICDScanner(self.target_dir)
+                future_tasks[executor.submit(cicd_scanner.scan)] = "CI/CD Pipeline"
+
+                jwt_scanner = JWTScanner(self.target_dir)
+                future_tasks[executor.submit(jwt_scanner.scan)] = "JWT Security"
+
+                ws_scanner = WebSocketScanner(self.target_dir)
+                future_tasks[executor.submit(ws_scanner.scan)] = "WebSocket"
+
+                ssti_scanner = SSTIScanner(target_dir=self.target_dir, target_url=self.target_url, timeout=self.timeout)
+                future_tasks[executor.submit(ssti_scanner.scan)] = "SSTI"
+
+                nosqli_scanner = NoSQLIScanner(target_dir=self.target_dir, target_url=self.target_url, timeout=self.timeout)
+                future_tasks[executor.submit(nosqli_scanner.scan)] = "NoSQL Injection"
+
+                xxe_scanner = XXEScanner(self.target_dir)
+                future_tasks[executor.submit(xxe_scanner.scan)] = "XXE"
 
                 lic_scanner = LicenseScanner(self.target_dir)
                 future_tasks[executor.submit(lic_scanner.scan)] = "License"
@@ -225,6 +261,8 @@ class SecAuditOrchestrator:
             result.volume_metrics.total_dependencies = sca_scanner.total_packages_count
         if iac_scanner:
             result.volume_metrics.total_manifests = iac_scanner.manifests_count
+        if cicd_scanner:
+            result.volume_metrics.total_manifests += cicd_scanner.workflow_files_count
 
         total_endpoints = 0
         if self.target_url:

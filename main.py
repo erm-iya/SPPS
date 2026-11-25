@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SecAudit 2.0 Enterprise - Comprehensive Security & Compliance Auditing Platform
+SecAudit 2.0 Enterprise - Security & Compliance Auditing Platform
 CLI Entry Point
 """
 
@@ -29,7 +29,7 @@ from sec_audit.reporting import TerminalReporter, JSONReporter, HTMLReporter, SA
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="SecAudit 2.0 Enterprise - Comprehensive Security, Secret & Dependency Auditing Tool",
+        description="SecAudit 2.0 Enterprise - Security, Secret & Dependency Auditing Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -76,7 +76,7 @@ Examples:
     )
     parser.add_argument(
         "--md",
-        help="Path to export comprehensive Markdown audit report (e.g. audit.md)",
+        help="Path to export Markdown audit report (e.g. audit.md)",
         type=str,
         default=None,
     )

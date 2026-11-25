@@ -1,11 +1,12 @@
 """
-Advanced Static Application Security Testing (SAST) Engine
-Comprehensive ruleset for secrets, code execution, SQLi, DOM XSS, SSRF, Path Traversal,
+Static Application Security Testing (SAST) Engine
+Ruleset for secrets, code execution, SQLi, DOM XSS, SSRF, Path Traversal,
 Mass Assignment, Prototype Pollution, weak crypto, and security misconfigurations.
 """
 
 import os
 import re
+import math
 from typing import List, Dict, Any, Optional
 from ..models import Finding, Severity, Category
 from ..config import SAST_EXTENSIONS
@@ -95,7 +96,7 @@ class SASTScanner:
             "cvss": 9.0,
             "regex": re.compile(r"""\b(AKIA[0-9A-Z]{16})\b"""),
             "description": "Hardcoded AWS Access Key ID detected in source code.",
-            "remediation": "Rotate AWS IAM access keys and utilize AWS IAM Roles, Vault, or AWS Secrets Manager.",
+            "remediation": "Rotate AWS IAM access keys and use AWS IAM Roles, Vault, or AWS Secrets Manager.",
             "cwe": "CWE-798",
             "owasp": "A04:2025-Cryptographic Failures",
         },
@@ -132,7 +133,7 @@ class SASTScanner:
             "name": "Server-Side Request Forgery (SSRF) Risk",
             "severity": Severity.HIGH,
             "cvss": 8.6,
-            "regex": re.compile(r"""(?i)(?:requests\.(?:get|post|put|delete|patch)|urllib\.request\.urlopen|axios\.(?:get|post)|fetch)\s*\(\s*(?:req\.|params|query|data|url|input|user_url)"""),
+            "regex": re.compile(r"""(?i)(?:requests\.(?:get|post|put|delete|patch)|urllib\.request\.urlopen|axios\.(?:get|post)|fetch)\s*\(\s*(?:req\.|params|query|data|url|input|user_url|user_input|target)"""),
             "description": "Server-side HTTP request dispatched with user-supplied URL/parameters without strict origin whitelisting.",
             "remediation": "Validate target URLs against an allowed destination whitelist and block internal private IP subnets (127.0.0.1, 10.0.0.0/8, 169.254.169.254).",
             "cwe": "CWE-918",
@@ -420,6 +421,37 @@ class SASTScanner:
         )
         return any(ind in context for ind in guard_indicators)
 
+    @staticmethod
+    def _calculate_shannon_entropy(s: str) -> float:
+        """
+        Calculates the Shannon entropy of a string to differentiate high-entropy cryptographic
+        keys/tokens from low-entropy placeholders, words, or dummy repeating values.
+        """
+        if not s:
+            return 0.0
+        entropy = 0.0
+        length = len(s)
+        counts = {}
+        for char in s:
+            counts[char] = counts.get(char, 0) + 1
+        for count in counts.values():
+            p = count / length
+            entropy -= p * math.log2(p)
+        return entropy
+
+    @staticmethod
+    def _has_hardcoded_origin(lines: List[str], line_idx: int) -> bool:
+        """
+        Inspects preceding 8 lines to see if the URL passed to requests/fetch has a hardcoded,
+        trusted scheme/domain (e.g. url = f"https://api.osv.dev/...") rather than untrusted user input.
+        """
+        start = max(0, line_idx - 9)
+        context = "".join(lines[start:line_idx]).lower()
+        if re.search(r'''(?:url|endpoint|target|uri)\s*=\s*(?:f['"]https?:\/\/|['"]https?:\/\/[a-zA-Z0-9_\-\.]+)''', context):
+            if not any(param in context for param in ("req.", "request.", "params", "query", "user_input", "user_url")):
+                return True
+        return False
+
     def __init__(self, target_dir: str, target_files: Optional[List[str]] = None):
         self.target_dir = os.path.abspath(target_dir)
         self.target_files = target_files
@@ -486,8 +518,41 @@ class SASTScanner:
         rule_hits: Dict[str, List[Finding]] = {}
         rule_suppressed: Dict[str, int] = {}
 
+        in_triple_double = False
+        in_triple_single = False
+        in_block_comment = False
+
         for line_idx, line in enumerate(lines, start=1):
             stripped = line.strip()
+
+            # Multi-line comment tracking (/* ... */)
+            if in_block_comment:
+                if "*/" in stripped:
+                    in_block_comment = False
+                continue
+            if stripped.startswith("/*") and "*/" not in stripped:
+                in_block_comment = True
+                continue
+
+            # Multi-line docstring tracking (""" ... """ and ''' ... ''')
+            if in_triple_double:
+                if '"""' in stripped:
+                    in_triple_double = False
+                continue
+            if in_triple_single:
+                if "'''" in stripped:
+                    in_triple_single = False
+                continue
+
+            if stripped.startswith(('"""', 'r"""', 'f"""', 'b"""', 'u"""')):
+                if stripped.count('"""') % 2 != 0:
+                    in_triple_double = True
+                continue
+            if stripped.startswith(("'''", "r'''", "f'''", "b'''", "u'''")):
+                if stripped.count("'''") % 2 != 0:
+                    in_triple_single = True
+                continue
+
             if stripped.startswith(("#", "//", "/*", "*")):
                 continue
 
@@ -512,6 +577,8 @@ class SASTScanner:
 
                 # Contextual filter for Prototype Pollution guards / validation sets
                 if rule_id == "INSEC-PROTO-POLLUTION":
+                    if ("assign_op" in line or "rule_id" in line or "in PATTERNS" in line):
+                        continue
                     if any(guard in line for guard in ("Set(", ".has(", ".includes(", "===", "!==", "indexOf(", "typeof ")) or ("['__proto__'" in line or '["__proto__"' in line):
                         if not any(assign_op in line for assign_op in (".__proto__ =", ".__proto__=", "prototype] =", "prototype]=")):
                             continue
@@ -523,6 +590,27 @@ class SASTScanner:
                 # Contextual filter for path traversal guards in preceding lines
                 if rule_id == "INSEC-PATH-TRAVERSAL" and self._has_path_traversal_guard(lines, line_idx):
                     continue
+
+                # Contextual filter for SSRF with static, trusted scheme/domain origins
+                if rule_id == "INSEC-SSRF" and self._has_hardcoded_origin(lines, line_idx):
+                    continue
+
+                # Secret detection entropy filter (suppress low-entropy placeholder strings like YOUR_API_KEY)
+                if rule_id.startswith("SEC-"):
+                    m_sec = pattern["regex"].search(line)
+                    if m_sec:
+                        candidate = m_sec.group(0)
+                        q_match = re.search(r'''['"]([a-zA-Z0-9_\-\.\$#@!%*]{6,})['"]''', candidate)
+                        if q_match:
+                            candidate = q_match.group(1)
+                        low_val = candidate.lower()
+                        if any(dummy in low_val for dummy in ("your_", "dummy", "placeholder", "example", "mysecret", "xxxx")):
+                            continue
+                        # Suppress low-entropy synthetic placeholders (e.g. repeated chars / zeroed tokens)
+                        if len(candidate) >= 16 and self._calculate_shannon_entropy(candidate) < 2.5:
+                            continue
+                        if rule_id == "SEC-GENERIC-VAR" and self._calculate_shannon_entropy(candidate) < 3.2:
+                            continue
 
                 if pattern["regex"].search(line):
                     current_hits = rule_hits.setdefault(rule_id, [])

@@ -87,7 +87,15 @@ class SARIFReporter:
                         }
                     }
                 ],
+                "properties": {
+                    "closure_state": f.closure_state,
+                    "cvss_score": f.cvss_score,
+                },
             }
+            if f.poc_curl:
+                result_entry["properties"]["poc_curl"] = f.poc_curl
+            if f.counterevidence:
+                result_entry["properties"]["counterevidence"] = f.counterevidence
             results.append(result_entry)
 
         sarif_data: Dict[str, Any] = {

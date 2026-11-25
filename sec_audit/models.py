@@ -22,10 +22,17 @@ class Category(str, Enum):
     HTTP_METHODS_CORS = "HTTP Methods & CORS Security"
     TECH_STACK = "Technology & Server Fingerprint"
     SAST = "Static Source Code Analysis"
-    IAC = "Infrastructure as Code (Docker/K8s)"
+    IAC = "Infrastructure as Code (Docker/K8s/Terraform)"
     SCA = "Dependency Vulnerabilities"
     LICENSE = "License Compliance"
     API = "API Security & OpenAPI Specifications"
+    CICD = "CI/CD & Pipeline Security"
+    GRAPHQL = "GraphQL & API Query Security"
+    JWT = "JWT & Authentication Security"
+    WEBSOCKET = "WebSocket & Real-Time Security"
+    SSTI = "Server-Side Template Injection (SSTI)"
+    NOSQLI = "NoSQL & Document DB Injection"
+    XXE = "XML External Entity (XXE) Processing"
 
 
 class OWASP2025(str, Enum):
@@ -57,6 +64,8 @@ class Finding:
     poc_curl: Optional[str] = None  # Strix-style reproducible PoC curl command
     owasp_category: Optional[str] = None  # OWASP Top 10:2025 classification
     cluster_count: int = 1  # Number of consolidated occurrences of this pattern in the same file
+    closure_state: str = "CONFIRMED"  # Strix closure discipline: CONFIRMED, RULED_OUT, NEEDS_REVIEW
+    counterevidence: Optional[str] = None  # Specific control rationale or proof gap explanation
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -74,6 +83,8 @@ class Finding:
             "poc_curl": self.poc_curl,
             "owasp_category": self.owasp_category,
             "cluster_count": self.cluster_count,
+            "closure_state": self.closure_state,
+            "counterevidence": self.counterevidence,
         }
 
 
@@ -197,11 +208,11 @@ class ScanResult:
                 owasp_counts[f.owasp_category] = owasp_counts.get(f.owasp_category, 0) + 1
 
             cat = f.category
-            if cat == Category.SAST.value:
+            if cat in [Category.SAST.value, Category.JWT.value, Category.SSTI.value, Category.NOSQLI.value, Category.XXE.value]:
                 sast_findings.append(f)
             elif cat in [Category.SCA.value, Category.LICENSE.value]:
                 sca_findings.append(f)
-            elif cat == Category.IAC.value:
+            elif cat in [Category.IAC.value, Category.CICD.value]:
                 iac_findings.append(f)
             else:
                 dast_findings.append(f)

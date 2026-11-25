@@ -1,5 +1,5 @@
 """
-Comprehensive automated unit test suite for SecAudit 2.0 Enterprise
+Automated unit test suite for SecAudit 2.0 Enterprise
 """
 
 import os
@@ -20,6 +20,13 @@ from sec_audit.reporting.html_reporter import HTMLReporter
 from sec_audit.reporting.sarif_reporter import SARIFReporter
 from sec_audit.reporting.markdown_reporter import MarkdownReporter
 from sec_audit.scanners.api_spec_scanner import APISpecScanner
+from sec_audit.scanners.cicd_scanner import CICDScanner
+from sec_audit.scanners.graphql_scanner import GraphQLScanner
+from sec_audit.scanners.jwt_scanner import JWTScanner
+from sec_audit.scanners.websocket_scanner import WebSocketScanner
+from sec_audit.scanners.ssti_scanner import SSTIScanner
+from sec_audit.scanners.nosqli_scanner import NoSQLIScanner
+from sec_audit.scanners.xxe_scanner import XXEScanner
 
 
 class TestSecAudit2(unittest.TestCase):
@@ -719,6 +726,311 @@ def read_custom_log(user_input):
         f2 = scanner._parse_osv_vuln(vuln_unrated, "pkg-b", "2.0.0", "package.json")
         self.assertEqual(f2.severity, Severity.MEDIUM)
         self.assertEqual(f2.cvss_score, 5.0)
+
+    def test_sast_docstring_and_entropy_false_positive_elimination(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sample_file = os.path.join(tmpdir, "docstring_and_placeholders.py")
+            with open(sample_file, "w", encoding="utf-8") as f:
+                f.write('''
+"""
+Documentation and docstring example:
+cursor.execute(f"SELECT * FROM users WHERE id = {user_id}")
+dummy_key = "sk-1234567890abcdef1234567890abcdef"
+"""
+
+# Low-entropy dummy placeholder outside docstring
+placeholder_token = "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+dummy_token_2 = "ghp_000000000000000000000000000000000000"
+
+# Genuine high-entropy secret
+real_secret = "ghp_4Z9qX2mL8wR1vT7yP0sK3jN6bC5aE8dF1gH2"
+''')
+            scanner = SASTScanner(tmpdir)
+            findings = scanner.scan()
+
+            # Ensure docstring SQLi and dummy low-entropy placeholders are not flagged
+            sqli_findings = [f for f in findings if "SQL Injection" in f.title]
+            self.assertEqual(len(sqli_findings), 0)
+
+            # Ensure genuine high-entropy secret was flagged
+            secret_findings = [f for f in findings if "Secret" in f.title or "Token" in f.title]
+            self.assertEqual(len(secret_findings), 1)
+            self.assertIn("real_secret", secret_findings[0].evidence or "")
+
+    def test_sast_static_origin_ssrf_suppression(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            safe_file = os.path.join(tmpdir, "safe_client.py")
+            with open(safe_file, "w", encoding="utf-8") as f:
+                f.write('''
+import requests
+
+def fetch_data(item_id):
+    url = f"https://api.osv.dev/v1/vulns/{item_id}"
+    return requests.get(url)
+''')
+            vuln_file = os.path.join(tmpdir, "vuln_client.py")
+            with open(vuln_file, "w", encoding="utf-8") as f:
+                f.write('''
+import requests
+
+def proxy_request(user_input):
+    return requests.get(user_input)
+''')
+            scanner = SASTScanner(tmpdir)
+            findings = scanner.scan()
+
+            ssrf_findings = [f for f in findings if "SSRF" in f.title or "Request Forgery" in f.title]
+            # Only the unvalidated dynamic URL should trigger SSRF, not the static origin
+            self.assertEqual(len(ssrf_findings), 1)
+            self.assertIn("vuln_client.py", ssrf_findings[0].location)
+
+    def test_cicd_scanner_pwn_request_and_script_injection(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            wf_dir = os.path.join(tmpdir, ".github", "workflows")
+            os.makedirs(wf_dir, exist_ok=True)
+            wf_path = os.path.join(wf_dir, "ci.yml")
+            with open(wf_path, "w", encoding="utf-8") as f:
+                f.write('''
+name: Insecure CI
+on: pull_request_target
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Print Title
+        run: echo "${{ github.event.issue.title }}"
+      - uses: actions/setup-node@v2
+''')
+            scanner = CICDScanner(tmpdir)
+            findings = scanner.scan()
+
+            titles = [f.title for f in findings]
+            self.assertTrue(any("PwnRequest" in t for t in titles))
+            self.assertTrue(any("Script Injection" in t for t in titles))
+            self.assertTrue(any("Unpinned Action" in t for t in titles))
+
+    def test_graphql_scanner_local_schema(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            schema_path = os.path.join(tmpdir, "schema.graphql")
+            with open(schema_path, "w", encoding="utf-8") as f:
+                f.write('''
+type User {
+  id: ID!
+  name: String!
+  friends: [User]
+}
+''')
+            scanner = GraphQLScanner(target_dir=tmpdir)
+            findings = scanner.scan()
+
+            self.assertTrue(len(findings) >= 1)
+            self.assertTrue(any("Recursive GraphQL Schema" in f.title for f in findings))
+
+    def test_jwt_scanner_rules(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            auth_py = os.path.join(tmpdir, "auth.py")
+            with open(auth_py, "w", encoding="utf-8") as f:
+                f.write('''
+import jwt
+
+def parse_token(raw_token):
+    return jwt.decode(raw_token, algorithms=["none"], verify_signature=False)
+
+def verify_token(raw_token):
+    return jwt.decode(raw_token, "secret", algorithms=["HS256"])
+''')
+            scanner = JWTScanner(tmpdir)
+            findings = scanner.scan()
+
+            titles = [f.title for f in findings]
+            self.assertTrue(any("none" in t.lower() for t in titles))
+            self.assertTrue(any("Weak Hardcoded JWT Secret" in t or "Weak Hardcoded Secret" in t for t in titles))
+
+    def test_iac_terraform_auditor(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tf_path = os.path.join(tmpdir, "main.tf")
+            with open(tf_path, "w", encoding="utf-8") as f:
+                f.write('''
+provider "aws" {
+  access_key = "AKIA1234567890123456"
+  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+}
+
+resource "aws_s3_bucket" "public_bucket" {
+  bucket = "my-test-bucket"
+  acl    = "public-read"
+}
+
+resource "aws_security_group" "allow_ssh" {
+  name = "allow_ssh"
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_ebs_volume" "unencrypted_vol" {
+  availability_zone = "us-west-2a"
+  size              = 40
+  encrypted         = false
+}
+''')
+            scanner = IaCScanner(tmpdir)
+            findings = scanner.scan()
+
+            titles = [f.title for f in findings]
+            self.assertTrue(any("Hardcoded Credentials" in t for t in titles))
+            self.assertTrue(any("Public Read" in t for t in titles))
+            self.assertTrue(any("SSH (22)" in t for t in titles))
+            self.assertTrue(any("Encryption Disabled" in t for t in titles))
+
+    def test_websocket_scanner_rules(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client_file = os.path.join(tmpdir, "client.js")
+            with open(client_file, "w", encoding="utf-8") as f:
+                f.write('''
+const socket = new WebSocket("ws://api.example.com/live");
+''')
+            server_file = os.path.join(tmpdir, "server.js")
+            with open(server_file, "w", encoding="utf-8") as f:
+                f.write('''
+const wss = new WebSocket.Server({ port: 8080, verifyClient: false });
+''')
+            scanner = WebSocketScanner(tmpdir)
+            findings = scanner.scan()
+
+            titles = [f.title for f in findings]
+            self.assertTrue(any("Unencrypted WebSocket" in t for t in titles))
+            self.assertTrue(any("Missing Origin Validation" in t for t in titles))
+
+    def test_ssti_scanner_jinja_and_node(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            flask_app = os.path.join(tmpdir, "app.py")
+            with open(flask_app, "w", encoding="utf-8") as f:
+                f.write('''
+from flask import render_template_string
+
+def render_page(user_input):
+    return render_template_string(f"Hello {user_input}")
+
+def safe_render():
+    return render_template_string("<h1>Welcome Home</h1>")
+''')
+            node_app = os.path.join(tmpdir, "server.js")
+            with open(node_app, "w", encoding="utf-8") as f:
+                f.write('''
+const ejs = require('ejs');
+function handleReq(req, res) {
+    const html = ejs.render(req.query.template);
+}
+''')
+            scanner = SSTIScanner(target_dir=tmpdir)
+            findings = scanner.scan()
+
+            titles = [f.title for f in findings]
+            self.assertTrue(any("Jinja2" in t for t in titles))
+            self.assertTrue(any("Node.js" in t for t in titles))
+            # Verify counterevidence: safe_render should not trigger a finding
+            self.assertEqual(len(findings), 2)
+
+    def test_nosqli_scanner_raw_payload_and_where(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vuln_route = os.path.join(tmpdir, "auth.js")
+            with open(vuln_route, "w", encoding="utf-8") as f:
+                f.write('''
+app.post('/login', async (req, res) => {
+    const user = await User.findOne(req.body);
+    const data = await collection.find({ $where: "this.name == '" + user_input + "'" });
+});
+''')
+            safe_route = os.path.join(tmpdir, "safe_auth.js")
+            with open(safe_route, "w", encoding="utf-8") as f:
+                f.write('''
+const sanitize = require('mongo-sanitize');
+app.post('/safe-login', async (req, res) => {
+    const clean = sanitize(req.body);
+    const user = await User.findOne(clean);
+});
+''')
+            scanner = NoSQLIScanner(target_dir=tmpdir)
+            findings = scanner.scan()
+
+            titles = [f.title for f in findings]
+            self.assertTrue(any("Raw Request Payload" in t for t in titles))
+            self.assertTrue(any("$where" in t for t in titles))
+            # Safe route should have been suppressed by mongo-sanitize counterevidence
+            safe_findings = [f for f in findings if "safe_auth.js" in f.location]
+            self.assertEqual(len(safe_findings), 0)
+
+    def test_xxe_scanner_lxml_and_doctype(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vuln_py = os.path.join(tmpdir, "parser.py")
+            with open(vuln_py, "w", encoding="utf-8") as f:
+                f.write('''
+from lxml import etree
+parser = etree.XMLParser(resolve_entities=True)
+''')
+            vuln_xml = os.path.join(tmpdir, "test.xml")
+            with open(vuln_xml, "w", encoding="utf-8") as f:
+                f.write('''<?xml version="1.0"?>
+<!DOCTYPE test [
+  <!ENTITY xxe SYSTEM "file:///etc/passwd">
+]>
+<data>&xxe;</data>
+''')
+            safe_py = os.path.join(tmpdir, "safe_parser.py")
+            with open(safe_py, "w", encoding="utf-8") as f:
+                f.write('''
+import defusedxml.lxml as defused_etree
+parser = defused_etree.XMLParser()
+''')
+            scanner = XXEScanner(target_dir=tmpdir)
+            findings = scanner.scan()
+
+            titles = [f.title for f in findings]
+            self.assertTrue(any("Python lxml" in t for t in titles))
+            self.assertTrue(any("DOCTYPE SYSTEM" in t for t in titles))
+            # defusedxml should be suppressed
+            safe_findings = [f for f in findings if "safe_parser.py" in f.location]
+            self.assertEqual(len(safe_findings), 0)
+
+    def test_strix_closure_state_and_sarif_properties(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sarif_file = os.path.join(tmpdir, "results.sarif")
+            res = ScanResult(target_dir=tmpdir)
+            res.findings.append(
+                Finding(
+                    title="Verified RCE Flaw",
+                    category=Category.SAST.value,
+                    severity=Severity.CRITICAL,
+                    description="RCE vulnerability",
+                    remediation="Patch input",
+                    cvss_score=9.8,
+                    closure_state="CONFIRMED",
+                    poc_curl="curl -s 'http://localhost/test?cmd=whoami'",
+                    counterevidence="No sanitize middleware present",
+                    location="app.py:10",
+                )
+            )
+            reporter = SARIFReporter(res)
+            reporter.export(sarif_file)
+
+            with open(sarif_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            sarif_results = data["runs"][0]["results"]
+            self.assertEqual(len(sarif_results), 1)
+            props = sarif_results[0].get("properties", {})
+            self.assertEqual(props.get("closure_state"), "CONFIRMED")
+            self.assertIn("curl", props.get("poc_curl", ""))
+            self.assertEqual(props.get("counterevidence"), "No sanitize middleware present")
+
+
 
 
 if __name__ == "__main__":

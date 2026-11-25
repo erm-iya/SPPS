@@ -24,7 +24,7 @@ SECURITY_HEADERS_RULES = {
         "cvss": 7.5,
         "owasp": "A02:2025-Security Misconfiguration",
         "description": "Content-Security-Policy helps prevent Cross-Site Scripting (XSS), clickjacking, and other code injection attacks.",
-        "remediation": "Define a robust CSP header (e.g. Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'self';).",
+        "remediation": "Define a strict CSP header (e.g. Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'self';).",
         "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP",
     },
     "X-Content-Type-Options": {

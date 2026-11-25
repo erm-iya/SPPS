@@ -34,5 +34,7 @@ class HTMLReporter:
             findings=[f.to_dict() for f in self.result.findings],
         )
 
-        with open(output_path, "w", encoding="utf-8") as f:
+        target_path = os.path.abspath(output_path)
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(target_path, "w", encoding="utf-8") as f:
             f.write(rendered)

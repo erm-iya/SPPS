@@ -14,6 +14,13 @@ from .iac_scanner import IaCScanner
 from .sca_scanner import SCAScanner
 from .license_scanner import LicenseScanner
 from .api_spec_scanner import APISpecScanner
+from .cicd_scanner import CICDScanner
+from .graphql_scanner import GraphQLScanner
+from .jwt_scanner import JWTScanner
+from .websocket_scanner import WebSocketScanner
+from .ssti_scanner import SSTIScanner
+from .nosqli_scanner import NoSQLIScanner
+from .xxe_scanner import XXEScanner
 
 __all__ = [
     "HeaderScanner",
@@ -28,4 +35,11 @@ __all__ = [
     "SCAScanner",
     "LicenseScanner",
     "APISpecScanner",
+    "CICDScanner",
+    "GraphQLScanner",
+    "JWTScanner",
+    "WebSocketScanner",
+    "SSTIScanner",
+    "NoSQLIScanner",
+    "XXEScanner",
 ]

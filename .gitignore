@@ -37,7 +37,13 @@ htmlcov/
 .vscode/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
 .DS_Store
 Thumbs.db
+desktop.ini
+*.bak
+*.patch
+*.orig
 chat_docs.md
 METHODOLOGY_CRITIQUE_AND_ROADMAP.md

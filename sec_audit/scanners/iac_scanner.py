@@ -67,6 +67,11 @@ class IaCScanner:
                     self.manifests_count += 1
                     findings.extend(self._audit_k8s_manifest(filepath, relpath))
 
+                # 4. Audit Terraform Infrastructure as Code
+                elif filename_lower.endswith((".tf", ".tfvars")):
+                    self.manifests_count += 1
+                    findings.extend(self._audit_terraform(filepath, relpath))
+
         return findings
 
     def _audit_dockerfile(self, manifest_file: str, relpath: str) -> List[Finding]:
@@ -278,6 +283,94 @@ class IaCScanner:
                         location=relpath,
                         cwe_id="CWE-1188",
                         owasp_category="A03:2025-Software Supply Chain Failures",
+                    )
+                )
+
+        return findings
+
+    def _audit_terraform(self, tf_file: str, relpath: str) -> List[Finding]:
+        findings = []
+        try:
+            with open(tf_file, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+                lines = content.splitlines()
+        except Exception:
+            return findings
+
+        # 1. Plaintext credentials in provider blocks
+        if re.search(r"""provider\s+["']aws["']""", content):
+            if re.search(r"""(?:access_key|secret_key)\s*=\s*["'][a-zA-Z0-9_\-\/+=]{10,}["']""", content):
+                findings.append(
+                    Finding(
+                        title="Terraform AWS Provider Contains Hardcoded Credentials",
+                        category=Category.IAC.value,
+                        severity=Severity.CRITICAL,
+                        cvss_score=9.0,
+                        description=f"Hardcoded access_key or secret_key discovered in AWS provider block in {relpath}.",
+                        evidence=f"File: {relpath}\nStatic AWS credentials configured in provider block.",
+                        remediation="Remove hardcoded credentials. Use AWS IAM Roles, environment variables (AWS_ACCESS_KEY_ID), or Vault.",
+                        location=relpath,
+                        cwe_id="CWE-798",
+                        owasp_category="A04:2025-Cryptographic Failures",
+                    )
+                )
+
+        # 2. S3 bucket public access
+        if re.search(r"""(?:acl\s*=\s*["']public-read(?:-write)?["']|block_public_acls\s*=\s*false|block_public_policy\s*=\s*false)""", content):
+            findings.append(
+                Finding(
+                    title="Terraform S3 Bucket Configured with Public Read / Write Access",
+                    category=Category.IAC.value,
+                    severity=Severity.HIGH,
+                    cvss_score=8.2,
+                    description=f"S3 bucket in {relpath} enables public access (public-read ACL or disabled block_public_acls). Data may be exposed to the entire internet.",
+                    evidence=f"File: {relpath}\nPublic ACL or disabled public block detected.",
+                    remediation="Set acl = 'private' and enable all aws_s3_bucket_public_access_block settings.",
+                    location=relpath,
+                    cwe_id="CWE-732",
+                    owasp_category="A01:2025-Broken Access Control & SSRF",
+                )
+            )
+
+        # 3. Unrestricted ingress (0.0.0.0/0 on sensitive ports)
+        has_wildcard_cidr = bool(re.search(r"""cidr_blocks\s*=\s*\[[^\]]*["']0\.0\.0\.0\/0["'][^\]]*\]""", content))
+        if has_wildcard_cidr:
+            # Check ports 22 (SSH), 3389 (RDP), or database ports
+            sensitive_ports = ("22", "3389", "3306", "5432", "27017", "6379", "1433")
+            for port in sensitive_ports:
+                if re.search(rf"""(?:from_port|to_port)\s*=\s*{port}\b""", content):
+                    service_name = "SSH (22)" if port == "22" else ("RDP (3389)" if port == "3389" else f"Database Port ({port})")
+                    findings.append(
+                        Finding(
+                            title=f"Terraform Security Group Exposes {service_name} to 0.0.0.0/0",
+                            category=Category.IAC.value,
+                            severity=Severity.HIGH,
+                            cvss_score=7.5,
+                            description=f"Security group rule in {relpath} allows inbound traffic from entire internet (0.0.0.0/0) to {service_name}.",
+                            evidence=f"File: {relpath}\nIngress rule exposes port {port} to 0.0.0.0/0",
+                            remediation=f"Restrict ingress on port {port} to trusted VPN or internal CIDR blocks.",
+                            location=relpath,
+                            cwe_id="CWE-284",
+                            owasp_category="A02:2025-Security Misconfiguration",
+                        )
+                    )
+                    break
+
+        # 4. Unencrypted storage (EBS / RDS / S3)
+        if re.search(r"""resource\s+["'](?:aws_ebs_volume|aws_db_instance)["']""", content):
+            if re.search(r"""(?:encrypted|storage_encrypted)\s*=\s*false""", content):
+                findings.append(
+                    Finding(
+                        title="Terraform Storage Resource Has Encryption Disabled",
+                        category=Category.IAC.value,
+                        severity=Severity.MEDIUM,
+                        cvss_score=5.5,
+                        description=f"Storage volume/instance in {relpath} explicitly sets encrypted = false.",
+                        evidence=f"File: {relpath}\nencrypted = false discovered.",
+                        remediation="Enable KMS encryption by setting encrypted = true (or storage_encrypted = true).",
+                        location=relpath,
+                        cwe_id="CWE-311",
+                        owasp_category="A04:2025-Cryptographic Failures",
                     )
                 )
 

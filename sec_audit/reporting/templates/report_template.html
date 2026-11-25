@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="fa" dir="rtl">
+<html lang="en" dir="ltr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>داشبورد جامع امنیت وب‌سایت - SecAudit 2.0 Enterprise</title>
+    <title>Security Assessment Dashboard - SecAudit 2.0 Enterprise</title>
     <!-- Chart.js CDN with graceful offline fallback -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
@@ -450,22 +450,22 @@
         <!-- Header -->
         <header class="header-card">
             <div class="header-title">
-                <h1>🔒 داشبورد جامع ارزیابی امنیت (SecAudit 2.0 Enterprise)</h1>
+                <h1>🔒 Security Assessment Dashboard (SecAudit 2.0 Enterprise)</h1>
                 <div class="header-meta">
                     {% if target_url %}
-                        <div><strong>آدرس وب‌سایت هدف:</strong> <span style="direction:ltr; display:inline-block;">{{ target_url }}</span></div>
+                        <div><strong>Target URL:</strong> <span>{{ target_url }}</span></div>
                     {% endif %}
                     {% if target_dir %}
-                        <div><strong>مسیر پروژه منبع:</strong> <span style="direction:ltr; display:inline-block;">{{ target_dir }}</span></div>
+                        <div><strong>Source Directory:</strong> <span>{{ target_dir }}</span></div>
                     {% endif %}
-                    <div><strong>تاریخ تحلیل:</strong> {{ scan_date }} | <strong>مدت زمان اسکن:</strong> {{ duration_seconds }} ثانیه</div>
+                    <div><strong>Audit Date:</strong> {{ scan_date }} | <strong>Scan Duration:</strong> {{ duration_seconds }}s</div>
                 </div>
             </div>
             <div class="score-box">
                 <div class="grade-badge grade-{{ grade[0] }}">{{ grade }}</div>
                 <div class="score-details">
-                    <h3>{{ security_score }} / ۱۰۰</h3>
-                    <p>نمره کلی امنیت سیستم</p>
+                    <h3>{{ security_score }} / 100</h3>
+                    <p>Overall Security Score</p>
                 </div>
             </div>
         </header>
@@ -473,23 +473,23 @@
         <!-- Stats Bar -->
         <section class="stats-grid">
             <div class="stat-card stat-critical">
-                <div class="stat-label">بحرانی (Critical)</div>
+                <div class="stat-label">Critical</div>
                 <div class="stat-number" style="color: var(--critical)">{{ stats.CRITICAL | default(0) }}</div>
             </div>
             <div class="stat-card stat-high">
-                <div class="stat-label">بالا (High)</div>
+                <div class="stat-label">High</div>
                 <div class="stat-number" style="color: var(--high)">{{ stats.HIGH | default(0) }}</div>
             </div>
             <div class="stat-card stat-medium">
-                <div class="stat-label">متوسط (Medium)</div>
+                <div class="stat-label">Medium</div>
                 <div class="stat-number" style="color: var(--medium)">{{ stats.MEDIUM | default(0) }}</div>
             </div>
             <div class="stat-card stat-low">
-                <div class="stat-label">پایین (Low)</div>
+                <div class="stat-label">Low</div>
                 <div class="stat-number" style="color: var(--low)">{{ stats.LOW | default(0) }}</div>
             </div>
             <div class="stat-card stat-info">
-                <div class="stat-label">اطلاعاتی (Info)</div>
+                <div class="stat-label">Info</div>
                 <div class="stat-number" style="color: var(--info)">{{ stats.INFO | default(0) }}</div>
             </div>
         </section>
@@ -497,13 +497,13 @@
         <!-- Analytics Charts -->
         <section class="analytics-grid">
             <div class="chart-card">
-                <h3>📊 توزیع آسیب‌پذیری‌ها بر اساس شدت (Severity)</h3>
+                <h3>📊 Vulnerability Distribution by Severity</h3>
                 <div class="chart-container">
                     <canvas id="severityChart"></canvas>
                 </div>
             </div>
             <div class="chart-card">
-                <h3>📂 تفکیک یافته‌ها بر اساس دسته‌بندی امنیتی</h3>
+                <h3>📂 Findings by Security Category</h3>
                 <div class="chart-container">
                     <canvas id="categoryChart"></canvas>
                 </div>
@@ -513,32 +513,32 @@
         <!-- Project Scale & Sub-Pillars -->
         <section class="analytics-grid" style="margin-bottom: 2rem;">
             <div class="chart-card" style="height: auto; min-height: 220px;">
-                <h3>📐 مقیاس و حجم پروژه ممیزی شده (Project Scale & Inventory)</h3>
+                <h3>📐 Project Scale & Inventory</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.5rem;">
                     <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.9rem; text-align: center;">
-                        <div style="color: var(--text-secondary); font-size: 0.85rem;">خطوط سورس‌کد (Lines of Code)</div>
+                        <div style="color: var(--text-secondary); font-size: 0.85rem;">Lines of Code (LoC)</div>
                         <div style="color: var(--accent); font-size: 1.5rem; font-weight: bold; margin-top: 0.2rem;">{{ volume_metrics.total_loc | default(0) }}</div>
                     </div>
                     <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.9rem; text-align: center;">
-                        <div style="color: var(--text-secondary); font-size: 0.85rem;">فایل‌های بررسی‌شده (Files)</div>
+                        <div style="color: var(--text-secondary); font-size: 0.85rem;">Audited Files</div>
                         <div style="color: #a7f3d0; font-size: 1.5rem; font-weight: bold; margin-top: 0.2rem;">{{ volume_metrics.total_files | default(0) }}</div>
                     </div>
                     <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.9rem; text-align: center;">
-                        <div style="color: var(--text-secondary); font-size: 0.85rem;">پکیج‌ها و وابستگی‌ها (Dependencies)</div>
+                        <div style="color: var(--text-secondary); font-size: 0.85rem;">Dependencies</div>
                         <div style="color: #fde047; font-size: 1.5rem; font-weight: bold; margin-top: 0.2rem;">{{ volume_metrics.total_dependencies | default(0) }}</div>
                     </div>
                     <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.9rem; text-align: center;">
-                        <div style="color: var(--text-secondary); font-size: 0.85rem;">مسیرها و روت‌های API / شبکه</div>
+                        <div style="color: var(--text-secondary); font-size: 0.85rem;">API & Network Endpoints</div>
                         <div style="color: #c084fc; font-size: 1.5rem; font-weight: bold; margin-top: 0.2rem;">{{ volume_metrics.total_endpoints | default(0) }}</div>
                     </div>
                 </div>
             </div>
             <div class="chart-card" style="height: auto; min-height: 220px;">
-                <h3>🛡️ نمرات ۴ ستون امنیتی پروژه (Security Sub-Pillars)</h3>
+                <h3>🛡️ Security Sub-Pillars</h3>
                 <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
                     <div>
                         <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
-                            <span>سورس‌کد و سکرت‌ها (SAST & Secrets)</span>
+                            <span>Source Code & Secrets (SAST)</span>
                             <strong style="color: #38bdf8;">{{ pillar_scores.sast_score | default(100) }}%</strong>
                         </div>
                         <div style="background: #0f172a; border-radius: 5px; height: 8px; overflow: hidden;">
@@ -547,7 +547,7 @@
                     </div>
                     <div>
                         <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
-                            <span>زنجیره تامین و پکیج‌ها (SCA & Dependencies)</span>
+                            <span>Supply Chain & Dependencies (SCA)</span>
                             <strong style="color: #10b981;">{{ pillar_scores.sca_score | default(100) }}%</strong>
                         </div>
                         <div style="background: #0f172a; border-radius: 5px; height: 8px; overflow: hidden;">
@@ -556,7 +556,7 @@
                     </div>
                     <div>
                         <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
-                            <span>کانتینر و داکر (Container & IaC)</span>
+                            <span>Containers & IaC (Infrastructure)</span>
                             <strong style="color: #f59e0b;">{{ pillar_scores.iac_score | default(100) }}%</strong>
                         </div>
                         <div style="background: #0f172a; border-radius: 5px; height: 8px; overflow: hidden;">
@@ -565,7 +565,7 @@
                     </div>
                     <div>
                         <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.25rem;">
-                            <span>سطح حمله وب و API (Network & DAST)</span>
+                            <span>Attack Surface & DAST (Network/Web)</span>
                             <strong style="color: #a855f7;">{{ pillar_scores.dast_score | default(100) }}%</strong>
                         </div>
                         <div style="background: #0f172a; border-radius: 5px; height: 8px; overflow: hidden;">
@@ -581,7 +581,7 @@
             <div class="info-row">
                 {% if detected_tech %}
                     <div class="info-card">
-                        <h3>🛠️ تکنولوژی‌ها و فریم‌ورک‌های شناسایی شده</h3>
+                        <h3>🛠️ Detected Technologies & Frameworks</h3>
                         <div>
                             {% for tech in detected_tech %}
                                 <span class="tech-pill">
@@ -595,11 +595,11 @@
 
                 {% if license_summary %}
                     <div class="info-card">
-                        <h3>📜 ممیزی لایسنس‌های پکیج‌ها (License Compliance)</h3>
+                        <h3>📜 License Compliance Audit</h3>
                         <div>
                             {% for lic_name, lic_count in license_summary.items() %}
                                 <span class="tech-pill">
-                                    <strong>{{ lic_name }}:</strong> {{ lic_count }} پکیج
+                                    <strong>{{ lic_name }}:</strong> {{ lic_count }} packages
                                 </span>
                             {% endfor %}
                         </div>
@@ -611,15 +611,15 @@
         <!-- Controls & Filters -->
         <div class="controls-card">
             <div class="filter-buttons">
-                <button class="filter-btn active" onclick="filterSeverity('ALL', event)">همه ({{ findings|length }})</button>
-                <button class="filter-btn" onclick="filterSeverity('CRITICAL', event)">بحرانی</button>
-                <button class="filter-btn" onclick="filterSeverity('HIGH', event)">بالا</button>
-                <button class="filter-btn" onclick="filterSeverity('MEDIUM', event)">متوسط</button>
-                <button class="filter-btn" onclick="filterSeverity('LOW', event)">پایین</button>
-                <button class="filter-btn" onclick="filterSeverity('INFO', event)">اطلاعاتی</button>
+                <button class="filter-btn active" onclick="filterSeverity('ALL', event)">All ({{ findings|length }})</button>
+                <button class="filter-btn" onclick="filterSeverity('CRITICAL', event)">Critical</button>
+                <button class="filter-btn" onclick="filterSeverity('HIGH', event)">High</button>
+                <button class="filter-btn" onclick="filterSeverity('MEDIUM', event)">Medium</button>
+                <button class="filter-btn" onclick="filterSeverity('LOW', event)">Low</button>
+                <button class="filter-btn" onclick="filterSeverity('INFO', event)">Info</button>
             </div>
             <div class="search-box">
-                <input type="text" id="searchInput" placeholder="جستجو در یافته‌ها یا CWE..." oninput="searchFindings()">
+                <input type="text" id="searchInput" placeholder="Search findings, title, or CWE..." oninput="searchFindings()">
             </div>
         </div>
 
@@ -636,7 +636,7 @@
                                     <span style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); padding: 0.2rem 0.55rem; border-radius: 6px; font-size: 0.78rem; margin-right: 0.4rem; font-weight: 600;">{{ finding.owasp_category }}</span>
                                 {% endif %}
                                 {% if finding.cluster_count and finding.cluster_count > 1 %}
-                                    <span style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 0.2rem 0.55rem; border-radius: 6px; font-size: 0.78rem; margin-right: 0.4rem; font-weight: 600;">تکرار خوشه‌ای ({{ finding.cluster_count }} مورد)</span>
+                                    <span style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 0.2rem 0.55rem; border-radius: 6px; font-size: 0.78rem; margin-right: 0.4rem; font-weight: 600;">Clustered ({{ finding.cluster_count }} occurrences)</span>
                                 {% endif %}
                                 <h2 class="finding-title">{{ finding.title }}</h2>
                             </div>
@@ -652,9 +652,9 @@
 
                         {% if finding.location %}
                             <div style="font-size: 0.88rem; color: #94a3b8; margin-bottom: 0.6rem;">
-                                <strong>موقعیت:</strong> <span style="direction: ltr; display: inline-block; color: #cbd5e1;">{{ finding.location }}</span>
+                                <strong>Location:</strong> <span style="color: #cbd5e1;">{{ finding.location }}</span>
                                 {% if finding.cwe_id %}
-                                    | <strong>شناسه آسیب‌پذیری:</strong> <span style="direction: ltr; display: inline-block; color: var(--accent);">{{ finding.cwe_id }}</span>
+                                    | <strong>CWE:</strong> <span style="color: var(--accent);">{{ finding.cwe_id }}</span>
                                 {% endif %}
                             </div>
                         {% endif %}
@@ -665,13 +665,13 @@
 
                         {% if finding.poc_curl %}
                             <div style="margin: 0.8rem 0;">
-                                <div style="font-size: 0.85rem; font-weight: bold; color: #10b981; margin-bottom: 0.35rem;">🎯 دستور اثبات و بازتولید آسیب‌پذیری (Strix-Style Reproducible PoC):</div>
-                                <div class="code-block" style="background: #064e3b; border: 1px solid #059669; color: #a7f3d0; direction: ltr; text-align: left; font-family: monospace;">{{ finding.poc_curl }}</div>
+                                <div style="font-size: 0.85rem; font-weight: bold; color: #10b981; margin-bottom: 0.35rem;">🎯 Reproducible Proof of Concept (PoC curl):</div>
+                                <div class="code-block" style="background: #064e3b; border: 1px solid #059669; color: #a7f3d0; font-family: monospace;">{{ finding.poc_curl }}</div>
                             </div>
                         {% endif %}
 
                         <div class="remediation-box">
-                            <div class="remediation-title">💡 راهکار رفع مشکل (Remediation):</div>
+                            <div class="remediation-title">💡 Remediation:</div>
                             <div class="remediation-text">{{ finding.remediation }}</div>
                         </div>
 
@@ -701,14 +701,14 @@
                 {% endfor %}
             {% else %}
                 <div style="text-align: center; padding: 4rem 2rem; background: var(--bg-card); border-radius: 16px; border: 1px solid var(--border-color);">
-                    <h3 style="color: var(--success); font-size: 1.6rem; margin-bottom: 0.5rem;">✅ هیچ آسیب‌پذیری امنیتی شناسایی نشد!</h3>
-                    <p style="color: var(--text-secondary);">پیکربندی امنیتی پروژه و وب‌سایت کاملاً منطبق با استانداردها و بدون ضعف است.</p>
+                    <h3 style="color: var(--success); font-size: 1.6rem; margin-bottom: 0.5rem;">✅ No Security Vulnerabilities Detected</h3>
+                    <p style="color: var(--text-secondary);">Target configuration and code inventory conform to security standards with zero reported defects.</p>
                 </div>
             {% endif %}
         </main>
 
         <footer>
-            <p>تولید شده توسط پلتفرم هوشمند SecAudit 2.0 Enterprise Security Auditor</p>
+            <p>Generated by SecAudit 2.0 Enterprise Security Auditor</p>
         </footer>
     </div>
 
@@ -737,7 +737,7 @@
                 new Chart(sevCtx, {
                     type: 'doughnut',
                     data: {
-                        labels: ['بحرانی (Critical)', 'بالا (High)', 'متوسط (Medium)', 'پایین (Low)', 'اطلاعاتی (Info)'],
+                        labels: ['Critical', 'High', 'Medium', 'Low', 'Info'],
                         datasets: [{
                             data: [
                                 stats.CRITICAL || 0,
@@ -773,7 +773,7 @@
                     data: {
                         labels: Object.keys(catCounts),
                         datasets: [{
-                            label: 'تعداد یافته‌ها',
+                            label: 'Findings Count',
                             data: Object.values(catCounts),
                             backgroundColor: '#38bdf8',
                             borderRadius: 6
