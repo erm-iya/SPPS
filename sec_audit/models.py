@@ -320,10 +320,10 @@ class ScanResult:
             composite = min(composite, 49.0)  # Grade D
         elif c_count >= 1:
             composite = min(composite, 69.0)  # Grade C
-        elif h_count >= 10 and c_count == 0:
-            composite = min(composite, 79.0)  # Grade C+ / B-
-        elif h_count >= 5 and c_count == 0:
-            composite = min(composite, 84.0)  # Grade B
+        elif h_count > 0 and c_count == 0:
+            # Smooth asymptotic ceiling preventing abrupt step-function cliffs
+            asymptotic_ceiling = 100.0 - 30.0 * (1.0 - math.exp(-0.06 * h_count))
+            composite = min(composite, asymptotic_ceiling)
 
         final_composite = int(round(max(0.0, min(100.0, composite))))
 

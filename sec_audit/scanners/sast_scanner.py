@@ -228,7 +228,7 @@ class SASTScanner:
             "name": "Insecure document.write / innerHTML Assignment",
             "severity": Severity.MEDIUM,
             "cvss": 5.5,
-            "regex": re.compile(r"""\b(?:document\.write\s*\(|\.innerHTML\s*=\s*(?!\s*['"`][^$\+<]*['"`]\s*;?))"""),
+            "regex": re.compile(r"""\b(?:document\.write\s*\(|\.innerHTML\s*=)"""),
             "description": "Direct manipulation of innerHTML or document.write with unescaped input leads to DOM-based XSS.",
             "remediation": "Use textContent / innerText or sanitize untrusted strings with DOMPurify.",
             "cwe": "CWE-79",
@@ -257,12 +257,14 @@ class SASTScanner:
         # -------------------------------------------------------------
         {
             "id": "INSEC-PROTO-POLLUTION",
-            "name": "Prototype Pollution Risk in Object Merge",
+            "name": "Prototype Pollution Risk in Object Assignment / Merge",
             "severity": Severity.HIGH,
             "cvss": 7.5,
-            "regex": re.compile(r"""(?:__proto__|constructor\s*\[\s*['"]prototype['"]\]|lodash\.merge\s*\(\s*\{\}\s*,)"""),
-            "description": "Object modification accessing prototype properties directly or merging untrusted input, risking Prototype Pollution in JavaScript applications.",
-            "remediation": "Freeze prototypes with Object.freeze(Object.prototype), validate object keys, or use Map instead of plain objects.",
+            "regex": re.compile(
+                r"""\.__proto__\s*=|\[\s*['"`]?__proto__['"`]?\s*\]\s*=|(?<!['"`\w])prototype\s*\[\s*[^\]]+\]\s*=|(?<!['"`\w])\.prototype\s*=\s*(?!Object\.create)|\bObject\s*\.\s*(?:assign|setPrototypeOf)\s*\(\s*(?:\{\}|Object\.prototype)|\blodash\.(?:merge|defaultsDeep)\s*\(\s*(?:\{\}|Object\.prototype)"""
+            ),
+            "description": "Direct modification of Object prototype properties or unsafe recursive merge into empty object prototype, risking Prototype Pollution in JavaScript applications.",
+            "remediation": "Freeze prototypes with Object.freeze(Object.prototype), validate object keys against a blacklist/whitelist, or use Object.create(null) / Map.",
             "cwe": "CWE-1321",
             "owasp": "A08:2025-Software and Data Integrity Failures",
         },
@@ -378,6 +380,46 @@ class SASTScanner:
             return True
         return False
 
+    @staticmethod
+    def _is_static_html_assignment(line: str) -> bool:
+        """
+        Detects if innerHTML assignment RHS is a pure static HTML string literal without
+        variable interpolation or dynamic concatenation (e.g. element.innerHTML = '<i class="..."></i>').
+        """
+        stripped = line.strip()
+        m = re.search(r'''\.innerHTML\s*=\s*(['"`])([\s\S]*?)\1\s*;?$''', stripped)
+        if m:
+            quote = m.group(1)
+            content = m.group(2)
+            if quote == "`" and "${" in content:
+                return False
+            if "+" in stripped:
+                return False
+            return True
+        return False
+
+    @staticmethod
+    def _has_path_traversal_guard(lines: List[str], line_idx: int) -> bool:
+        """
+        Inspects preceding 8 lines to see if path confinement or containment guards
+        (e.g., .startsWith, commonpath, basename, resolve) are present before file access.
+        """
+        start = max(0, line_idx - 9)
+        context = "".join(lines[start:line_idx - 1]).lower()
+        guard_indicators = (
+            ".startswith(",
+            "os.path.commonpath",
+            "os.path.basename",
+            "path.basename",
+            "path.normalize",
+            "path.resolve",
+            "safe_join",
+            "allowed_dir",
+            "allowed_dirs",
+            "secure_filename",
+        )
+        return any(ind in context for ind in guard_indicators)
+
     def __init__(self, target_dir: str, target_files: Optional[List[str]] = None):
         self.target_dir = os.path.abspath(target_dir)
         self.target_files = target_files
@@ -466,6 +508,20 @@ class SASTScanner:
 
                 # Client-side contextual filter: SSRF and SQL Injection do not apply to browser code
                 if is_client_side and rule_id in ("INSEC-SSRF", "SQL-CONCAT"):
+                    continue
+
+                # Contextual filter for Prototype Pollution guards / validation sets
+                if rule_id == "INSEC-PROTO-POLLUTION":
+                    if any(guard in line for guard in ("Set(", ".has(", ".includes(", "===", "!==", "indexOf(", "typeof ")) or ("['__proto__'" in line or '["__proto__"' in line):
+                        if not any(assign_op in line for assign_op in (".__proto__ =", ".__proto__=", "prototype] =", "prototype]=")):
+                            continue
+
+                # Contextual filter for static HTML string literals in innerHTML
+                if rule_id == "XSS-DOC-WRITE" and self._is_static_html_assignment(line):
+                    continue
+
+                # Contextual filter for path traversal guards in preceding lines
+                if rule_id == "INSEC-PATH-TRAVERSAL" and self._has_path_traversal_guard(lines, line_idx):
                     continue
 
                 if pattern["regex"].search(line):

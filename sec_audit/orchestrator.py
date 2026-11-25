@@ -6,7 +6,7 @@ Coordinates multithreaded scanning across DAST, Network, SAST, IaC, SCA, and Lic
 import os
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from typing import Optional, List, Callable
 from .models import ScanResult, Severity, Finding
 from .scanners import (
@@ -164,28 +164,52 @@ class SecAuditOrchestrator:
             if self.progress_callback:
                 self.progress_callback(5, f"Dispatched {total_tasks} parallel security engines...")
 
-            for future in as_completed(future_tasks):
+            pending = set(future_tasks.keys())
+            last_reported_pct = 5
+
+            while pending:
                 if self.check_interrupted:
                     self.check_interrupted()
 
-                completed_count += 1
-                task_name = future_tasks[future]
-                if self.progress_callback and total_tasks > 0:
-                    pct = 5 + int((completed_count / total_tasks) * 90)
-                    self.progress_callback(pct, f"Completed scanning: {task_name}")
+                # Non-blocking wait with a 0.8s heartbeat
+                done, pending = wait(pending, timeout=0.8, return_when=FIRST_COMPLETED)
 
-                try:
-                    res = future.result()
-                    if task_name == "Tech Detector":
-                        result.detected_tech = res
-                    elif task_name == "License":
-                        lic_findings, lic_summary = res
-                        all_findings.extend(lic_findings)
-                        result.license_summary = lic_summary
-                    elif isinstance(res, list):
-                        all_findings.extend(res)
-                except Exception:
-                    pass
+                if done:
+                    for future in done:
+                        completed_count += 1
+                        task_name = future_tasks[future]
+                        pct = 5 + int((completed_count / total_tasks) * 90)
+                        last_reported_pct = pct
+
+                        remaining_names = [future_tasks[f] for f in pending]
+                        if remaining_names:
+                            msg = f"Completed {task_name} | In-progress: {', '.join(remaining_names)}..."
+                        else:
+                            msg = f"Completed all engines ({task_name})."
+
+                        if self.progress_callback:
+                            self.progress_callback(pct, msg)
+
+                        try:
+                            res = future.result()
+                            if task_name == "Tech Detector":
+                                result.detected_tech = res
+                            elif task_name == "License":
+                                lic_findings, lic_summary = res
+                                all_findings.extend(lic_findings)
+                                result.license_summary = lic_summary
+                            elif isinstance(res, list):
+                                all_findings.extend(res)
+                        except Exception:
+                            pass
+                else:
+                    # Periodic heartbeat while long-running tasks (like SAST or SCA) are working
+                    remaining_names = [future_tasks[f] for f in pending]
+                    if self.progress_callback and remaining_names:
+                        self.progress_callback(
+                            last_reported_pct,
+                            f"Auditing in progress: {', '.join(remaining_names)}..."
+                        )
 
         if self.progress_callback:
             self.progress_callback(98, "Calculating security score and finalizing metrics...")

@@ -19,6 +19,18 @@ reports/
 *.json
 *.sarif
 !sec_audit/reporting/templates/*.html
+*.log
+*.tmp
+scratch/
+
+# Build & Test artifacts
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+*.bak
 
 # IDE & OS files
 .idea/
@@ -27,3 +39,5 @@ reports/
 *.swo
 .DS_Store
 Thumbs.db
+chat_docs.md
+METHODOLOGY_CRITIQUE_AND_ROADMAP.md

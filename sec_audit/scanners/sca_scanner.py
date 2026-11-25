@@ -7,6 +7,7 @@ import os
 import json
 import re
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Dict, Set, Any, Optional
 from ..models import Finding, Severity, Category
 from ..config import DEFAULT_TIMEOUT, DEFAULT_USER_AGENT, IGNORE_DIRS
@@ -28,6 +29,7 @@ class SCAScanner:
         self.headers = {"User-Agent": DEFAULT_USER_AGENT, "Content-Type": "application/json"}
         self.matcher = IgnoreMatcher(self.target_dir)
         self.total_packages_count: int = 0
+        self._vuln_cache: Dict[str, Dict[str, Any]] = {}
 
     def scan(self) -> List[Finding]:
         findings: List[Finding] = []
@@ -43,62 +45,79 @@ class SCAScanner:
                 if not self.matcher.is_ignored(os.path.join(root, d), is_dir=True)
             ]
 
-            for file in files:
-                fpath = os.path.join(root, file)
-                if self.matcher.is_ignored(fpath, is_dir=False):
-                    continue
+            valid_files = [
+                f for f in files 
+                if not self.matcher.is_ignored(os.path.join(root, f), is_dir=False)
+            ]
+            files_map = {f.lower(): f for f in valid_files}
+
+            # 1. Node.js (Strict Lockfile Precedence: package-lock.json takes precedence over package.json)
+            if "package-lock.json" in files_map:
+                fpath = os.path.join(root, files_map["package-lock.json"])
                 relpath = os.path.relpath(fpath, self.target_dir)
-                fname_lower = file.lower()
+                for pkg, ver in self._parse_package_lock_json(fpath):
+                    if (pkg, ver, "npm") not in seen_keys:
+                        seen_keys.add((pkg, ver, "npm"))
+                        packages.append((pkg, ver, "npm", relpath))
+            elif "package.json" in files_map:
+                fpath = os.path.join(root, files_map["package.json"])
+                relpath = os.path.relpath(fpath, self.target_dir)
+                for pkg, ver in self._parse_package_json(fpath):
+                    if (pkg, ver, "npm") not in seen_keys:
+                        seen_keys.add((pkg, ver, "npm"))
+                        packages.append((pkg, ver, "npm", relpath))
 
-                # 1. Node.js (package.json, package-lock.json)
-                if fname_lower == "package.json":
-                    for pkg, ver in self._parse_package_json(fpath):
-                        if (pkg, ver, "npm") not in seen_keys:
-                            seen_keys.add((pkg, ver, "npm"))
-                            packages.append((pkg, ver, "npm", relpath))
-                elif fname_lower == "package-lock.json":
-                    for pkg, ver in self._parse_package_lock_json(fpath):
-                        if (pkg, ver, "npm") not in seen_keys:
-                            seen_keys.add((pkg, ver, "npm"))
-                            packages.append((pkg, ver, "npm", relpath))
+            # 2. Python (Strict Lockfile Precedence: poetry.lock takes precedence over requirements.txt)
+            if "poetry.lock" in files_map:
+                fpath = os.path.join(root, files_map["poetry.lock"])
+                relpath = os.path.relpath(fpath, self.target_dir)
+                for pkg, ver in self._parse_poetry_lock(fpath):
+                    if (pkg, ver, "PyPI") not in seen_keys:
+                        seen_keys.add((pkg, ver, "PyPI"))
+                        packages.append((pkg, ver, "PyPI", relpath))
+            else:
+                for fname_lower, original_name in files_map.items():
+                    if fname_lower == "requirements.txt" or fname_lower.endswith(".requirements.txt"):
+                        fpath = os.path.join(root, original_name)
+                        relpath = os.path.relpath(fpath, self.target_dir)
+                        for pkg, ver in self._parse_requirements_txt(fpath):
+                            if (pkg, ver, "PyPI") not in seen_keys:
+                                seen_keys.add((pkg, ver, "PyPI"))
+                                packages.append((pkg, ver, "PyPI", relpath))
 
-                # 2. Python (requirements.txt, Pipfile.lock, poetry.lock)
-                elif fname_lower == "requirements.txt" or fname_lower.endswith(".requirements.txt"):
-                    for pkg, ver in self._parse_requirements_txt(fpath):
-                        if (pkg, ver, "PyPI") not in seen_keys:
-                            seen_keys.add((pkg, ver, "PyPI"))
-                            packages.append((pkg, ver, "PyPI", relpath))
-                elif fname_lower == "poetry.lock":
-                    for pkg, ver in self._parse_poetry_lock(fpath):
-                        if (pkg, ver, "PyPI") not in seen_keys:
-                            seen_keys.add((pkg, ver, "PyPI"))
-                            packages.append((pkg, ver, "PyPI", relpath))
+            # 3. PHP (Strict Lockfile Precedence: composer.lock takes precedence over composer.json)
+            if "composer.lock" in files_map:
+                fpath = os.path.join(root, files_map["composer.lock"])
+                relpath = os.path.relpath(fpath, self.target_dir)
+                for pkg, ver in self._parse_composer_lock(fpath):
+                    if (pkg, ver, "Packagist") not in seen_keys:
+                        seen_keys.add((pkg, ver, "Packagist"))
+                        packages.append((pkg, ver, "Packagist", relpath))
+            elif "composer.json" in files_map:
+                fpath = os.path.join(root, files_map["composer.json"])
+                relpath = os.path.relpath(fpath, self.target_dir)
+                for pkg, ver in self._parse_composer_json(fpath):
+                    if (pkg, ver, "Packagist") not in seen_keys:
+                        seen_keys.add((pkg, ver, "Packagist"))
+                        packages.append((pkg, ver, "Packagist", relpath))
 
-                # 3. PHP (composer.json, composer.lock)
-                elif fname_lower == "composer.json":
-                    for pkg, ver in self._parse_composer_json(fpath):
-                        if (pkg, ver, "Packagist") not in seen_keys:
-                            seen_keys.add((pkg, ver, "Packagist"))
-                            packages.append((pkg, ver, "Packagist", relpath))
-                elif fname_lower == "composer.lock":
-                    for pkg, ver in self._parse_composer_lock(fpath):
-                        if (pkg, ver, "Packagist") not in seen_keys:
-                            seen_keys.add((pkg, ver, "Packagist"))
-                            packages.append((pkg, ver, "Packagist", relpath))
+            # 4. Rust (Cargo.lock)
+            if "cargo.lock" in files_map:
+                fpath = os.path.join(root, files_map["cargo.lock"])
+                relpath = os.path.relpath(fpath, self.target_dir)
+                for pkg, ver in self._parse_cargo_lock(fpath):
+                    if (pkg, ver, "crates.io") not in seen_keys:
+                        seen_keys.add((pkg, ver, "crates.io"))
+                        packages.append((pkg, ver, "crates.io", relpath))
 
-                # 4. Rust (Cargo.lock, Cargo.toml)
-                elif fname_lower == "cargo.lock":
-                    for pkg, ver in self._parse_cargo_lock(fpath):
-                        if (pkg, ver, "crates.io") not in seen_keys:
-                            seen_keys.add((pkg, ver, "crates.io"))
-                            packages.append((pkg, ver, "crates.io", relpath))
-
-                # 5. Go (go.mod)
-                elif fname_lower == "go.mod":
-                    for pkg, ver in self._parse_go_mod(fpath):
-                        if (pkg, ver, "Go") not in seen_keys:
-                            seen_keys.add((pkg, ver, "Go"))
-                            packages.append((pkg, ver, "Go", relpath))
+            # 5. Go (go.mod)
+            if "go.mod" in files_map:
+                fpath = os.path.join(root, files_map["go.mod"])
+                relpath = os.path.relpath(fpath, self.target_dir)
+                for pkg, ver in self._parse_go_mod(fpath):
+                    if (pkg, ver, "Go") not in seen_keys:
+                        seen_keys.add((pkg, ver, "Go"))
+                        packages.append((pkg, ver, "Go", relpath))
 
         self.total_packages_count = len(packages)
 
@@ -229,17 +248,64 @@ class SCAScanner:
             pass
         return pkgs
 
+    def _hydrate_vuln_ids(self, vuln_ids: List[str]) -> None:
+        """
+        Hydrate OSV vulnerability details concurrently for un-hydrated IDs.
+        OSV querybatch endpoint only returns id/modified fields, omitting severity,
+        advisory details, database_specific metadata, and aliases.
+        """
+        missing_ids = [vid for vid in set(vuln_ids) if vid and vid not in self._vuln_cache]
+        if not missing_ids or not self.check_online:
+            return
+
+        # Cap hydration at 40 advisories to prevent network saturation on large repositories
+        missing_ids = missing_ids[:40]
+
+        def _fetch_one(vid: str) -> Tuple[str, Optional[Dict[str, Any]]]:
+            url = f"https://api.osv.dev/v1/vulns/{vid}"
+            try:
+                # Fast timeout so individual packet drops or slow advisories never stall the audit
+                resp = requests.get(url, headers=self.headers, timeout=min(self.timeout, 4))
+                if resp.status_code == 200:
+                    return vid, resp.json()
+            except Exception:
+                pass
+            return vid, None
+
+        max_workers = min(10, len(missing_ids))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_id = {executor.submit(_fetch_one, vid): vid for vid in missing_ids}
+            for fut in as_completed(future_to_id):
+                try:
+                    vid, data = fut.result()
+                    if data:
+                        self._vuln_cache[vid] = data
+                except Exception:
+                    pass
+
     def _parse_osv_vuln(self, v: Dict[str, Any], pkg_name: str, version: str, filepath: str) -> Finding:
         vuln_id = v.get("id", "VULN")
         summary = v.get("summary") or v.get("details", "Known vulnerability in dependency")
         if len(summary) > 200:
             summary = summary[:200] + "..."
 
-        sev = Severity.HIGH
-        cvss = 7.5
         database_specific = v.get("database_specific", {})
-        severity_str = database_specific.get("severity", "").upper()
-        if "CRITICAL" in severity_str:
+        severity_str = str(database_specific.get("severity", "")).upper()
+
+        # Check informational / unmaintained packages first
+        is_unmaintained = (
+            database_specific.get("informational") == "unmaintained"
+            or "unmaintained" in summary.lower()
+            or "deprecated" in summary.lower()
+        )
+
+        sev = Severity.MEDIUM
+        cvss = 5.0
+
+        if is_unmaintained:
+            sev = Severity.LOW
+            cvss = 3.5
+        elif "CRITICAL" in severity_str:
             sev = Severity.CRITICAL
             cvss = 9.5
         elif "HIGH" in severity_str:
@@ -251,6 +317,25 @@ class SCAScanner:
         elif "LOW" in severity_str:
             sev = Severity.LOW
             cvss = 3.5
+        else:
+            # Check for CVSS v3 score in severity array: [{"type": "CVSS_V3", "score": "CVSS:3.1/..."}]
+            osv_severities = v.get("severity", [])
+            found_cvss = False
+            if isinstance(osv_severities, list):
+                for s_entry in osv_severities:
+                    if isinstance(s_entry, dict) and s_entry.get("type") == "CVSS_V3":
+                        score_val = s_entry.get("score")
+                        if score_val:
+                            try:
+                                num_score = float(score_val)
+                                cvss = num_score
+                                found_cvss = True
+                            except ValueError:
+                                pass
+            if not found_cvss:
+                # Safe conservative default for unrated vulnerabilities is MEDIUM (5.0), avoiding false critical alarms
+                sev = Severity.MEDIUM
+                cvss = 5.0
 
         return Finding(
             title=f"Vulnerable Dependency: {pkg_name}@{version} ({vuln_id})",
@@ -270,7 +355,7 @@ class SCAScanner:
         if not self.check_online or not packages:
             return findings
 
-        chunk_size = 1000
+        chunk_size = 500
         for i in range(0, len(packages), chunk_size):
             chunk = packages[i:i + chunk_size]
             payload = {
@@ -296,16 +381,40 @@ class SCAScanner:
                 if resp.status_code == 200:
                     data = resp.json()
                     results = data.get("results", [])
+
+                    # Hydrate full vulnerability data concurrently
+                    all_vuln_ids = [
+                        v["id"]
+                        for res in results
+                        for v in res.get("vulns", [])
+                        if "id" in v
+                    ]
+                    self._hydrate_vuln_ids(all_vuln_ids)
+
                     for (pkg, ver, eco, relpath), res in zip(chunk, results):
                         vulns = res.get("vulns", [])
-                        for v in vulns:
+                        seen_advisories_for_pkg: Set[str] = set()
+                        for raw_v in vulns:
+                            vid = raw_v.get("id", "")
+                            v = self._vuln_cache.get(vid, raw_v)
+                            aliases = set(v.get("aliases", []))
+                            if vid:
+                                aliases.add(vid)
+                            if aliases and (aliases & seen_advisories_for_pkg):
+                                # Skip duplicate advisory sharing CVE / GHSA alias for the same package
+                                continue
+                            seen_advisories_for_pkg.update(aliases)
                             findings.append(self._parse_osv_vuln(v, pkg, ver, relpath))
                 else:
+                    # Avoid unbounded sequential HTTP loops on large repos if batch endpoint fails
+                    if len(chunk) <= 20:
+                        for pkg, ver, eco, relpath in chunk:
+                            findings.extend(self._check_package_osv(pkg, ver, eco, relpath))
+            except Exception:
+                # Avoid unbounded sequential HTTP loops on large repos during network timeouts
+                if len(chunk) <= 20:
                     for pkg, ver, eco, relpath in chunk:
                         findings.extend(self._check_package_osv(pkg, ver, eco, relpath))
-            except Exception:
-                for pkg, ver, eco, relpath in chunk:
-                    findings.extend(self._check_package_osv(pkg, ver, eco, relpath))
 
         return findings
 
@@ -332,7 +441,19 @@ class SCAScanner:
             if resp.status_code == 200:
                 data = resp.json()
                 vulns = data.get("vulns", [])
-                for v in vulns:
+                all_vuln_ids = [v["id"] for v in vulns if "id" in v]
+                self._hydrate_vuln_ids(all_vuln_ids)
+
+                seen_advisories: Set[str] = set()
+                for raw_v in vulns:
+                    vid = raw_v.get("id", "")
+                    v = self._vuln_cache.get(vid, raw_v)
+                    aliases = set(v.get("aliases", []))
+                    if vid:
+                        aliases.add(vid)
+                    if aliases and (aliases & seen_advisories):
+                        continue
+                    seen_advisories.update(aliases)
                     findings.append(self._parse_osv_vuln(v, pkg_name, version, filepath))
         except Exception:
             pass

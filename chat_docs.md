@@ -1,5 +1,15 @@
 # SPPS Project Memory (SecAudit 2.0 Enterprise)
 
+## 2026-11-25: Core Methodology Flaws Remediation (SecAudit Enterprise)
+- **Decision / Change**: Implemented two-phase concurrent hydration and lockfile precedence in `sca_scanner.py`, assignment-only + guard exemption rules for prototype pollution, static markup exemption for `innerHTML`, lookback confinement checks for path traversal in `sast_scanner.py`, and smooth asymptotic ceiling $100 - 30(1 - e^{-0.06 H})$ in `models.py`.
+- **to_do**: Prepare remote branch / pull request for repository collaboration.
+- **to_remember**: Lockfiles (`package-lock.json`, `poetry.lock`, `composer.lock`, `Cargo.lock`) take absolute precedence over manifests in the same directory to avoid duplicate and inaccurate SCA counting.
+
+## 2026-11-25: Comprehensive Methodology Critique & SecAudit 3.0 Roadmap
+- **Decision / Change**: Authored complete architectural and algorithmic critique document `METHODOLOGY_CRITIQUE_AND_ROADMAP.md` analyzing 6 critical methodology flaws discovered during enterprise-scale audits: OSV batch severity truncation bug in `sca_scanner.py`, naive prototype pollution regex penalizing defensive blocklists in `sast_scanner.py`, blanket innerHTML false positives without taint tracking, lockfile/manifest dual-counting, and rigid mathematical ceiling traps in `models.py`.
+- **to_do**: Fully executed remediation plan; all 23 unit tests passing.
+- **to_remember**: OSV `/v1/querybatch` returns only `id` and `modified`, omitting `database_specific` severity metadata; never default batch findings to `Severity.HIGH`.
+
 ## 2026-11-23: Platform Modernization, Bug Hunting & Strix Integration
 - **Decision / Change**: Refactored SecAudit 2.0 with OSV.dev batch API, cryptography-based DER SSL extraction, SPA catch-all filtering, K8s IaC auditing, Git diff-scoped scanning, OpenAPI/Swagger scanner, and automated OWASP Top 10:2025 + PoC curl generation.
 - **to_do**: Await user confirmation before running live DAST or source audits against production targets.

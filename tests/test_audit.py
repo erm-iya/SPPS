@@ -557,6 +557,169 @@ def read_custom_log(user_input):
         self.assertLessEqual(res.security_score, 49)
         self.assertIn(res.grade, ["D", "F"])
 
+    def test_sca_lockfile_precedence(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create both package.json and package-lock.json in same dir
+            pkg_json = os.path.join(tmpdir, "package.json")
+            with open(pkg_json, "w", encoding="utf-8") as f:
+                json.dump({"dependencies": {"lodash": "^4.17.20", "express": "^4.18.0"}}, f)
+
+            pkg_lock = os.path.join(tmpdir, "package-lock.json")
+            with open(pkg_lock, "w", encoding="utf-8") as f:
+                json.dump({
+                    "packages": {
+                        "node_modules/lodash": {"version": "4.17.21"},
+                    }
+                }, f)
+
+            scanner = SCAScanner(tmpdir, check_online=False)
+            scanner.scan()
+            # Only 1 package from package-lock.json should be parsed, package.json must be skipped
+            self.assertEqual(scanner.total_packages_count, 1)
+
+    def test_sast_prototype_pollution_guard_exemption(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            code_file = os.path.join(tmpdir, "safe_proto.js")
+            with open(code_file, "w", encoding="utf-8") as f:
+                f.write("""
+                // Legitimate key-validation guard against Prototype Pollution
+                const blockedKeys = new Set(['__proto__', 'constructor', 'prototype']);
+                function safeMerge(target, source) {
+                    for (const key of Object.keys(source)) {
+                        if (blockedKeys.has(key)) continue;
+                        target[key] = source[key];
+                    }
+                }
+                """)
+
+            scanner = SASTScanner(tmpdir)
+            findings = scanner.scan()
+            proto_findings = [f for f in findings if "Prototype Pollution" in f.title]
+            self.assertEqual(len(proto_findings), 0)
+
+            # Now test genuine vulnerable sink
+            vuln_file = os.path.join(tmpdir, "vuln_proto.js")
+            with open(vuln_file, "w", encoding="utf-8") as f:
+                f.write("""
+                function unsafeAssign(obj, payload) {
+                    obj.__proto__ = payload;
+                }
+                """)
+            findings2 = scanner.scan()
+            vuln_findings = [f for f in findings2 if "Prototype Pollution" in f.title]
+            self.assertTrue(len(vuln_findings) >= 1)
+
+    def test_sast_innerhtml_static_markup_exemption(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            code_file = os.path.join(tmpdir, "ui_helper.js")
+            with open(code_file, "w", encoding="utf-8") as f:
+                f.write("""
+                // Pure static icons and markup loaders
+                container.innerHTML = '<i class="fa fa-spinner fa-spin"></i>';
+                badge.innerHTML = "<span class='badge bg-success'>OK</span>";
+                """)
+
+            scanner = SASTScanner(tmpdir)
+            findings = scanner.scan()
+            xss_findings = [f for f in findings if "innerHTML" in f.title]
+            self.assertEqual(len(xss_findings), 0)
+
+            # Test dynamic concatenation sink
+            vuln_file = os.path.join(tmpdir, "vuln_ui.js")
+            with open(vuln_file, "w", encoding="utf-8") as f:
+                f.write("""
+                function renderAlert(userInput) {
+                    container.innerHTML = "<div class='alert'>" + userInput + "</div>";
+                }
+                """)
+            findings2 = scanner.scan()
+            vuln_findings = [f for f in findings2 if "innerHTML" in f.title]
+            self.assertTrue(len(vuln_findings) >= 1)
+
+    def test_sast_path_traversal_lookback_guard(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            guarded_file = os.path.join(tmpdir, "file_server.py")
+            with open(guarded_file, "w", encoding="utf-8") as f:
+                f.write("""
+                import os
+                def read_safe(user_filename):
+                    base_dir = "/app/storage"
+                    target = os.path.abspath(os.path.join(base_dir, user_filename))
+                    if target.startswith(base_dir):
+                        with open(target, "r") as f:
+                            return f.read()
+                """)
+
+            scanner = SASTScanner(tmpdir)
+            findings = scanner.scan()
+            traversal_findings = [f for f in findings if "Path Traversal" in f.title]
+            self.assertEqual(len(traversal_findings), 0)
+
+            # Test unguarded path traversal
+            unguarded_file = os.path.join(tmpdir, "vuln_server.py")
+            with open(unguarded_file, "w", encoding="utf-8") as f:
+                f.write("""
+                def read_danger(user_filename):
+                    with open(user_filename, "r") as f:
+                        return f.read()
+                """)
+            findings2 = scanner.scan()
+            unguarded_findings = [f for f in findings2 if "Path Traversal" in f.title]
+            self.assertTrue(len(unguarded_findings) >= 1)
+
+    def test_continuous_asymptotic_risk_ceiling(self):
+        from sec_audit.models import VolumeMetrics
+
+        # Calculate scores for 9 Highs vs 10 Highs
+        def create_scan_with_highs(count: int) -> ScanResult:
+            res = ScanResult(
+                target_dir="/mock",
+                volume_metrics=VolumeMetrics(total_loc=100000, total_files=200, total_dependencies=300),
+            )
+            for i in range(count):
+                res.findings.append(
+                    Finding(
+                        title=f"High Risk Flaw {i}",
+                        category=Category.SAST.value,
+                        severity=Severity.HIGH,
+                        description="High issue",
+                        remediation="Fix it",
+                        cvss_score=8.0,
+                    )
+                )
+            res.calculate_score()
+            return res
+
+        r9 = create_scan_with_highs(9)
+        r10 = create_scan_with_highs(10)
+
+        # Difference should be smooth (smooth decay ~ 1-2 points), not a 5-point sudden cliff
+        score_diff = r9.security_score - r10.security_score
+        self.assertLessEqual(score_diff, 2)
+        self.assertGreaterEqual(score_diff, 0)
+
+    def test_sca_smart_severity_mapping(self):
+        scanner = SCAScanner("/mock", check_online=False)
+
+        # 1. Unmaintained advisory
+        vuln_unm = {
+            "id": "GHSA-unm",
+            "summary": "This package is unmaintained and deprecated",
+            "database_specific": {"informational": "unmaintained"},
+        }
+        f1 = scanner._parse_osv_vuln(vuln_unm, "old-pkg", "1.0.0", "package.json")
+        self.assertEqual(f1.severity, Severity.LOW)
+        self.assertEqual(f1.cvss_score, 3.5)
+
+        # 2. Unrated advisory (defaults safely to MEDIUM 5.0)
+        vuln_unrated = {
+            "id": "GHSA-unrated",
+            "summary": "Some vulnerability without CVSS or database severity",
+        }
+        f2 = scanner._parse_osv_vuln(vuln_unrated, "pkg-b", "2.0.0", "package.json")
+        self.assertEqual(f2.severity, Severity.MEDIUM)
+        self.assertEqual(f2.cvss_score, 5.0)
+
 
 if __name__ == "__main__":
     unittest.main()
